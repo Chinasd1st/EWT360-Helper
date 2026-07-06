@@ -1,5 +1,5 @@
 /**
- * GUI 界面模块
+ * GUI 界面模块 v3 - 工具感设计
  */
 
 import { DebugLogger } from '../utils/DebugLogger';
@@ -37,7 +37,6 @@ export class GUI {
   private state: GUIState;
   private guideOverlay: HTMLElement | null = null;
 
-  // 模块引用
   private autoPlay: AutoPlay;
   private autoSkip: AutoSkip;
   private autoCheckPass: AutoCheckPass;
@@ -62,8 +61,7 @@ export class GUI {
   init(): void {
     this.loadConfig();
     this.createStyles();
-    this.createMenuButton();
-    this.createMenuPanel();
+    this.createUI();
     this.restoreModuleStates();
     this.createGuideOverlay();
     this.autoPlay.setMode(this.state.playMode);
@@ -100,185 +98,391 @@ export class GUI {
   private createStyles(): void {
     const style = document.createElement('style');
     style.textContent = `
-      .ewt-helper-container{position:fixed;bottom:20px;right:20px;z-index:99999;font-family:Arial,sans-serif;}
-      .ewt-menu-button{width:50px;height:50px;border-radius:50%;background:#4CAF50;color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 8px rgba(0,0,0,0.2);transition:all .3s;}
-      .ewt-menu-button:hover{background:#45a049;transform:scale(1.05);}
-      .ewt-menu-panel{position:absolute;bottom:60px;right:0;width:280px;background:white;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:15px;display:none;flex-direction:column;gap:10px;}
-      .ewt-menu-panel.open{display:flex;}
-      .ewt-menu-title{font-size:18px;font-weight:bold;color:#333;margin-bottom:10px;text-align:center;padding-bottom:5px;border-bottom:1px solid #eee;}
-      .ewt-toggle-item{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f5;}
-      .ewt-toggle-label{font-size:14px;color:#555;}
-      .ewt-toggle-label.brush-mode{color:#2196F3;font-weight:bold;}
-      .ewt-playmode-group{padding:8px 0;border-bottom:1px solid #f5f5f5;}
-      .ewt-playmode-title{font-size:14px;color:#555;margin-bottom:8px;}
-      .ewt-playmode-buttons{display:flex;gap:8px;}
-      .ewt-playmode-btn{flex:1;padding:6px 0;border-radius:4px;border:1px solid #ddd;background:#fff;color:#555;cursor:pointer;text-align:center;font-size:13px;transition:all .2s;}
-      .ewt-playmode-btn.active{background:#4CAF50;color:white;border-color:#4CAF50;}
-      .ewt-playmode-btn:hover{background:#f5f5f5;}
-      .ewt-playmode-btn.active:hover{background:#45a049;}
-      .ewt-switch{position:relative;display:inline-block;width:40px;height:24px;}
-      .ewt-switch input{opacity:0;width:0;height:0;}
-      .ewt-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;transition:.4s;border-radius:24px;}
-      .ewt-slider:before{position:absolute;content:"";height:16px;width:16px;left:4px;bottom:4px;background:white;transition:.4s;border-radius:50%;}
-      input:checked+.ewt-slider{background:#4CAF50;}
-      input:checked+.ewt-slider:before{transform:translateX(16px);}
-      .ewt-guide-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99998;display:flex;flex-direction:column;justify-content:center;align-items:center;}
-      .ewt-guide-text{color:white;font-size:24px;font-weight:bold;margin-bottom:20px;text-align:center;line-height:1.5;}
-      .ewt-guide-arrow{position:fixed;bottom:80px;right:80px;color:white;font-size:60px;font-weight:bold;animation:ewt-bounce 1.5s infinite;transform:rotate(45deg);}
-      @keyframes ewt-bounce{0%,100%{transform:translate(0,0) rotate(45deg);}50%{transform:translate(15px,15px) rotate(45deg);}}
+      :root {
+        --ewt-primary: #3B82F6;
+        --ewt-primary-hover: #2563EB;
+        --ewt-danger: #EF4444;
+        --ewt-danger-hover: #DC2626;
+        --ewt-bg: #1E1E2E;
+        --ewt-surface: #2A2A3C;
+        --ewt-surface-hover: #333347;
+        --ewt-border: #3A3A4C;
+        --ewt-text: #E4E4E7;
+        --ewt-text-secondary: #A1A1AA;
+        --ewt-radius: 12px;
+        --ewt-radius-sm: 8px;
+      }
+
+      .ewt-fab {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: none;
+        background: var(--ewt-primary);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        transition: all 0.2s ease;
+        font-size: 20px;
+      }
+      .ewt-fab:hover {
+        background: var(--ewt-primary-hover);
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+      }
+      .ewt-fab:active {
+        transform: scale(0.95);
+      }
+      .ewt-fab.active {
+        background: var(--ewt-danger);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      }
+      .ewt-fab.active:hover {
+        background: var(--ewt-danger-hover);
+      }
+
+      .ewt-panel {
+        position: fixed;
+        bottom: 84px;
+        right: 24px;
+        z-index: 99998;
+        width: 260px;
+        background: var(--ewt-bg);
+        border: 1px solid var(--ewt-border);
+        border-radius: var(--ewt-radius);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(8px) scale(0.98);
+        transition: all 0.2s ease;
+        overflow: hidden;
+      }
+      .ewt-panel.open {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+      }
+
+      .ewt-panel-header {
+        padding: 16px 16px 12px;
+        border-bottom: 1px solid var(--ewt-border);
+      }
+      .ewt-panel-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ewt-text);
+        letter-spacing: 0.5px;
+      }
+      .ewt-panel-version {
+        font-size: 11px;
+        color: var(--ewt-text-secondary);
+        margin-top: 2px;
+      }
+
+      .ewt-panel-body {
+        padding: 8px 0;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .ewt-panel-body::-webkit-scrollbar {
+        width: 4px;
+      }
+      .ewt-panel-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .ewt-panel-body::-webkit-scrollbar-thumb {
+        background: var(--ewt-border);
+        border-radius: 2px;
+      }
+
+      .ewt-section {
+        padding: 4px 16px;
+      }
+      .ewt-section + .ewt-section {
+        border-top: 1px solid var(--ewt-border);
+        margin-top: 4px;
+        padding-top: 12px;
+      }
+      .ewt-section-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ewt-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 8px;
+      }
+
+      .ewt-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+      }
+      .ewt-row + .ewt-row {
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .ewt-label {
+        font-size: 13px;
+        color: var(--ewt-text);
+        user-select: none;
+      }
+      .ewt-label.danger {
+        color: var(--ewt-danger);
+      }
+
+      .ewt-toggle {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+      .ewt-toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+      .ewt-toggle-track {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: var(--ewt-surface);
+        border: 1px solid var(--ewt-border);
+        border-radius: 10px;
+        transition: all 0.2s ease;
+      }
+      .ewt-toggle-track::after {
+        content: '';
+        position: absolute;
+        height: 14px;
+        width: 14px;
+        left: 2px;
+        bottom: 2px;
+        background: var(--ewt-text-secondary);
+        border-radius: 50%;
+        transition: all 0.2s ease;
+      }
+      .ewt-toggle input:checked + .ewt-toggle-track {
+        background: var(--ewt-primary);
+        border-color: var(--ewt-primary);
+      }
+      .ewt-toggle input:checked + .ewt-toggle-track::after {
+        transform: translateX(16px);
+        background: white;
+      }
+
+      .ewt-mode-group {
+        display: flex;
+        gap: 4px;
+        background: var(--ewt-surface);
+        border-radius: var(--ewt-radius-sm);
+        padding: 3px;
+      }
+      .ewt-mode-btn {
+        flex: 1;
+        padding: 6px 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ewt-text-secondary);
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+      }
+      .ewt-mode-btn:hover {
+        color: var(--ewt-text);
+      }
+      .ewt-mode-btn.active {
+        background: var(--ewt-primary);
+        color: white;
+        font-weight: 500;
+      }
+
+      .ewt-brush-btn {
+        width: 100%;
+        padding: 10px;
+        border: 1px dashed var(--ewt-border);
+        border-radius: var(--ewt-radius-sm);
+        background: transparent;
+        color: var(--ewt-text-secondary);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-top: 4px;
+      }
+      .ewt-brush-btn:hover {
+        border-color: var(--ewt-primary);
+        color: var(--ewt-primary);
+        background: rgba(59, 130, 246, 0.05);
+      }
+      .ewt-brush-btn.active {
+        border-style: solid;
+        border-color: var(--ewt-danger);
+        color: var(--ewt-danger);
+        background: rgba(239, 68, 68, 0.05);
+      }
+
+      .ewt-guide {
+        position: fixed;
+        inset: 0;
+        z-index: 99997;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        opacity: 0;
+        animation: ewt-fadeIn 0.3s ease forwards;
+      }
+      .ewt-guide-text {
+        color: white;
+        font-size: 18px;
+        font-weight: 500;
+        text-align: center;
+        line-height: 1.6;
+      }
+      .ewt-guide-hint {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 13px;
+        animation: ewt-pulse 2s ease infinite;
+      }
+      @keyframes ewt-fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes ewt-pulse {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+      }
     `;
     document.head.appendChild(style);
   }
 
-  private createMenuButton(): void {
-    const oldContainer = document.querySelector('.ewt-helper-container');
-    if (oldContainer) oldContainer.remove();
+  private createUI(): void {
+    document.querySelector('.ewt-fab')?.remove();
+    document.querySelector('.ewt-panel')?.remove();
 
-    const container = document.createElement('div');
-    container.className = 'ewt-helper-container';
+    const fab = document.createElement('button');
+    fab.className = 'ewt-fab';
+    fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
+    fab.onclick = () => this.toggleMenu();
 
-    const btn = document.createElement('button');
-    btn.className = 'ewt-menu-button';
-    btn.innerHTML = '📚';
-    btn.onclick = () => this.toggleMenu();
-
-    container.appendChild(btn);
-    document.body.appendChild(container);
-  }
-
-  private createGuideOverlay(): void {
-    if (this.state.hasShownGuide) return;
-
-    const overlay = document.createElement('div');
-    overlay.className = 'ewt-guide-overlay';
-
-    const text = document.createElement('div');
-    text.className = 'ewt-guide-text';
-    text.innerHTML = '欢迎使用升学E网通助手！<br>请点击右下角绿色图标打开控制面板';
-
-    const arrow = document.createElement('div');
-    arrow.className = 'ewt-guide-arrow';
-    arrow.textContent = '👉';
-
-    overlay.appendChild(text);
-    overlay.appendChild(arrow);
-    document.body.appendChild(overlay);
-    this.guideOverlay = overlay;
-  }
-
-  private createMenuPanel(): void {
     const panel = document.createElement('div');
-    panel.className = 'ewt-menu-panel';
+    panel.className = 'ewt-panel';
 
-    const title = document.createElement('div');
-    title.className = 'ewt-menu-title';
-    title.textContent = '升学E网通助手';
+    panel.innerHTML = `
+      <div class="ewt-panel-header">
+        <div class="ewt-panel-title">EWT360 Helper</div>
+        <div class="ewt-panel-version">v3.0.1 · React Fiber</div>
+      </div>
+      <div class="ewt-panel-body">
+        <div class="ewt-section">
+          <div class="ewt-section-label">连播模式</div>
+          <div class="ewt-mode-group" id="ewt-mode-group">
+            <button class="ewt-mode-btn ${this.state.playMode === PlayMode.PROGRESS_85 ? 'active' : ''}" data-mode="progress85">85% 连播</button>
+            <button class="ewt-mode-btn ${this.state.playMode === PlayMode.FULL_PLAY ? 'active' : ''}" data-mode="fullPlay">看完连播</button>
+          </div>
+        </div>
+        <div class="ewt-section">
+          <div class="ewt-section-label">自动化</div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动连播</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoPlay" ${this.state.autoPlay ? 'checked' : ''}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动跳题</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoSkip" ${this.state.autoSkip ? 'checked' : ''}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动过检</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoCheckPass" ${this.state.autoCheckPass ? 'checked' : ''}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">2x 倍速</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-speedControl" ${this.state.speedControl ? 'checked' : ''}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">锁定进度</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-lockProgress" ${this.state.lockProgress ? 'checked' : ''}><span class="ewt-toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="ewt-section">
+          <button class="ewt-brush-btn ${this.state.courseBrushMode ? 'active' : ''}" id="ewt-brush">
+            ${this.state.courseBrushMode ? '退出刷课模式' : '一键刷课'}
+          </button>
+        </div>
+      </div>
+    `;
 
-    panel.appendChild(title);
-    panel.appendChild(this.createPlayModeGroup());
-    panel.appendChild(this.createToggleItem('autoSkip', '自动跳题', v => this.autoSkip.toggle(v)));
-    panel.appendChild(this.createToggleItem('autoPlay', '自动连播', v => this.autoPlay.toggle(v)));
-    panel.appendChild(this.createToggleItem('autoCheckPass', '自动过检', v => this.autoCheckPass.toggle(v)));
-    panel.appendChild(this.createToggleItem('speedControl', '2倍速播放', v => this.speedControl.toggle(v)));
-    panel.appendChild(this.createToggleItem('lockProgress', '锁定进度条', v => this.progressLock.toggle(v)));
-    panel.appendChild(this.createToggleItem('courseBrushMode', '刷课模式', v => {
-      v ? this.enableCourseBrushMode() : this.disableCourseBrushMode();
-    }, true));
+    document.body.appendChild(fab);
+    document.body.appendChild(panel);
 
-    document.querySelector('.ewt-helper-container')?.appendChild(panel);
+    this.bindEvents();
   }
 
-  private createPlayModeGroup(): HTMLElement {
-    const group = document.createElement('div');
-    group.className = 'ewt-playmode-group';
+  private bindEvents(): void {
+    // Mode buttons
+    document.querySelectorAll('#ewt-mode-group .ewt-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = (btn as HTMLElement).dataset.mode as PlayMode;
+        this.state.playMode = mode;
+        this.autoPlay.setMode(mode);
+        document.querySelectorAll('#ewt-mode-group .ewt-mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.saveConfig();
+      });
+    });
 
-    const title = document.createElement('div');
-    title.className = 'ewt-playmode-title';
-    title.textContent = '连播模式选择';
-    group.appendChild(title);
+    // Toggle switches
+    const toggles: Array<{ id: string; key: keyof GUIState; handler: (v: boolean) => void }> = [
+      { id: 'ewt-autoPlay', key: 'autoPlay', handler: v => this.autoPlay.toggle(v) },
+      { id: 'ewt-autoSkip', key: 'autoSkip', handler: v => this.autoSkip.toggle(v) },
+      { id: 'ewt-autoCheckPass', key: 'autoCheckPass', handler: v => this.autoCheckPass.toggle(v) },
+      { id: 'ewt-speedControl', key: 'speedControl', handler: v => this.speedControl.toggle(v) },
+      { id: 'ewt-lockProgress', key: 'lockProgress', handler: v => this.progressLock.toggle(v) },
+    ];
 
-    const buttons = document.createElement('div');
-    buttons.className = 'ewt-playmode-buttons';
+    toggles.forEach(({ id, key, handler }) => {
+      const el = document.getElementById(id) as HTMLInputElement;
+      if (el) {
+        el.addEventListener('change', () => {
+          this.state[key] = el.checked as never;
+          this.saveConfig();
+          handler(el.checked);
+        });
+      }
+    });
 
-    const btn85 = document.createElement('button');
-    btn85.className = `ewt-playmode-btn ${this.state.playMode === PlayMode.PROGRESS_85 ? 'active' : ''}`;
-    btn85.textContent = '85%进度连播';
-    btn85.onclick = () => {
-      this.state.playMode = PlayMode.PROGRESS_85;
-      this.autoPlay.setMode(PlayMode.PROGRESS_85);
-      this.updatePlayModeButtons();
-      this.saveConfig();
-    };
-
-    const btnFull = document.createElement('button');
-    btnFull.className = `ewt-playmode-btn ${this.state.playMode === PlayMode.FULL_PLAY ? 'active' : ''}`;
-    btnFull.textContent = '看完后连播';
-    btnFull.onclick = () => {
-      this.state.playMode = PlayMode.FULL_PLAY;
-      this.autoPlay.setMode(PlayMode.FULL_PLAY);
-      this.updatePlayModeButtons();
-      this.saveConfig();
-    };
-
-    buttons.appendChild(btn85);
-    buttons.appendChild(btnFull);
-    group.appendChild(buttons);
-    return group;
-  }
-
-  private updatePlayModeButtons(): void {
-    const btns = document.querySelectorAll('.ewt-playmode-btn');
-    btns.forEach(b => b.classList.remove('active'));
-    if (this.state.playMode === PlayMode.PROGRESS_85) {
-      btns[0]?.classList.add('active');
-    } else {
-      btns[1]?.classList.add('active');
+    // Brush mode
+    const brushBtn = document.getElementById('ewt-brush');
+    if (brushBtn) {
+      brushBtn.addEventListener('click', () => {
+        const newState = !this.state.courseBrushMode;
+        this.state.courseBrushMode = newState;
+        this.saveConfig();
+        newState ? this.enableCourseBrushMode() : this.disableCourseBrushMode();
+      });
     }
-  }
-
-  private createToggleItem(
-    id: keyof GUIState,
-    label: string,
-    onChange: (value: boolean) => void,
-    isBrush: boolean = false
-  ): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'ewt-toggle-item';
-
-    const lab = document.createElement('label');
-    lab.className = `ewt-toggle-label ${isBrush ? 'brush-mode' : ''}`;
-    lab.textContent = label;
-
-    const sw = document.createElement('label');
-    sw.className = 'ewt-switch';
-
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.id = `ewt-toggle-${id}`;
-    input.checked = this.state[id] as boolean;
-
-    const slider = document.createElement('span');
-    slider.className = 'ewt-slider';
-
-    sw.appendChild(input);
-    sw.appendChild(slider);
-    item.appendChild(lab);
-    item.appendChild(sw);
-
-    input.onchange = (e) => {
-      const target = e.target as HTMLInputElement;
-      this.state[id as keyof GUIState] = target.checked as never;
-      this.saveConfig();
-      onChange(target.checked);
-    };
-
-    return item;
   }
 
   private toggleMenu(): void {
     this.isMenuOpen = !this.isMenuOpen;
-    const panel = document.querySelector('.ewt-menu-panel');
+    const panel = document.querySelector('.ewt-panel');
+    const fab = document.querySelector('.ewt-fab');
+
     this.isMenuOpen ? panel?.classList.add('open') : panel?.classList.remove('open');
+    this.isMenuOpen ? fab?.classList.add('active') : fab?.classList.remove('active');
 
     if (this.isMenuOpen && this.guideOverlay) {
       this.guideOverlay.remove();
@@ -286,6 +490,31 @@ export class GUI {
       this.state.hasShownGuide = true;
       this.saveConfig();
     }
+  }
+
+  private createGuideOverlay(): void {
+    if (this.state.hasShownGuide) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'ewt-guide';
+
+    overlay.innerHTML = `
+      <div class="ewt-guide-text">
+        欢迎使用 EWT360 Helper<br>
+        <span style="font-size:14px;font-weight:400;opacity:0.7">点击右下角按钮打开控制面板</span>
+      </div>
+      <div class="ewt-guide-hint">点击任意处关闭</div>
+    `;
+
+    overlay.addEventListener('click', () => {
+      overlay.remove();
+      this.guideOverlay = null;
+      this.state.hasShownGuide = true;
+      this.saveConfig();
+    });
+
+    document.body.appendChild(overlay);
+    this.guideOverlay = overlay;
   }
 
   private enableCourseBrushMode(): void {
@@ -299,6 +528,7 @@ export class GUI {
     this.autoCheckPass.toggle(true);
     this.speedControl.toggle(true);
     this.progressLock.toggle(true);
+    this.updateBrushButton(true);
     DebugLogger.log('GUI', '刷课模式已开启');
   }
 
@@ -313,13 +543,22 @@ export class GUI {
     this.autoCheckPass.toggle(false);
     this.speedControl.toggle(false);
     this.progressLock.toggle(false);
+    this.updateBrushButton(false);
     DebugLogger.log('GUI', '刷课模式已关闭');
   }
 
   private setToggleState(id: keyof GUIState, checked: boolean): void {
     this.state[id] = checked as never;
     this.saveConfig();
-    const el = document.getElementById(`ewt-toggle-${id}`) as HTMLInputElement | null;
+    const el = document.getElementById(`ewt-${id}`) as HTMLInputElement | null;
     if (el) el.checked = checked;
+  }
+
+  private updateBrushButton(active: boolean): void {
+    const btn = document.getElementById('ewt-brush');
+    if (btn) {
+      btn.classList.toggle('active', active);
+      btn.textContent = active ? '退出刷课模式' : '一键刷课';
+    }
   }
 }
