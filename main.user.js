@@ -356,6 +356,7 @@
       }
     }
     switchToNext() {
+      var _a;
       const now = Date.now();
       if (now - this.lastSwitchTime < 3e3) {
         DebugLogger.debug("AutoPlay", "切换冷却中，跳过");
@@ -369,8 +370,11 @@
       const nextVideo = this.findNextVideo(activeVideo);
       if (nextVideo) {
         this.lastSwitchTime = now;
-        DebugLogger.log("AutoPlay", "找到下一个视频，准备切换");
-        nextVideo.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        DebugLogger.log("AutoPlay", `准备切换，目标元素: ${nextVideo.className}`);
+        DebugLogger.log("AutoPlay", `目标元素内容: ${(_a = nextVideo.textContent) == null ? void 0 : _a.substring(0, 50)}`);
+        const clickTarget = nextVideo.querySelector('[class*="title"], [class*="name"], a, span') || nextVideo;
+        DebugLogger.log("AutoPlay", `点击目标: ${clickTarget.className}`);
+        clickTarget.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
         DebugLogger.log("AutoPlay", "已自动切换下一个视频");
       } else {
         DebugLogger.debug("AutoPlay", "没有更多视频");
@@ -379,30 +383,43 @@
     findNextVideo(current) {
       var _a;
       let next = current.nextElementSibling;
+      let idx = 0;
       while (next) {
         if (!this.isCompleted(next)) {
+          DebugLogger.debug("AutoPlay", `找到未完成视频: 第${idx + 1}个`);
           return next;
         }
         next = next.nextElementSibling;
+        idx++;
       }
       next = current.nextElementSibling;
       if (next) {
+        DebugLogger.debug("AutoPlay", "所有视频已完成，选择下一个");
         return next;
       }
       const firstChild = (_a = current.parentElement) == null ? void 0 : _a.firstElementChild;
       if (firstChild && firstChild !== current) {
+        DebugLogger.debug("AutoPlay", "已到末尾，循环到第一个视频");
         return firstChild;
       }
       return null;
     }
     findActiveVideo() {
       const semanticEl = findElement(SELECTORS.activeVideo);
-      if (semanticEl) return semanticEl;
+      if (semanticEl) {
+        DebugLogger.debug("AutoPlay", "通过语义化选择器找到激活视频", semanticEl.className);
+        return semanticEl;
+      }
       const container = findElement(SELECTORS.videoList);
-      if (!container) return null;
+      if (!container) {
+        DebugLogger.debug("AutoPlay", "未找到视频列表容器");
+        return null;
+      }
       const items = container.querySelectorAll('[class*="video-item-"], [class*="video-"]');
+      DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
       for (const item of items) {
         if (matchesSelector(item, SELECTORS.activeVideo)) {
+          DebugLogger.debug("AutoPlay", "通过 matchesSelector 找到激活视频", item.className);
           return item;
         }
       }
