@@ -500,6 +500,7 @@ const GUI = {
         autoPlay: false,
         autoCheckPass: false,
         speedControl: false,
+        lockProgress: false,
         courseBrushMode: false,
         hasShownGuide: false,
         playMode: Config.playMode.PROGRESS_85
@@ -536,6 +537,7 @@ const GUI = {
         if (this.state.autoPlay) AutoPlay.toggle(true);
         if (this.state.autoCheckPass) AutoCheckPass.toggle(true);
         if (this.state.speedControl) SpeedControl.toggle(true);
+        if (this.state.lockProgress) ProgressLock.toggle(true);
     },
 
     createStyles() {
