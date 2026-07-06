@@ -81,45 +81,32 @@
       ],
       cssModule: [
         '[class*="task-list-container"]',
-        '[class*="videos-"]'
+        '[class*="task-list"]'
       ]
     },
     /**
-     * 视频项
+     * 视频项 - 使用 li 元素
      */
     videoItem: {
       semantic: [],
       structural: [],
-      cssModule: [
-        '[class*="video-item-"]',
-        '[class*="video-"]'
-      ]
+      cssModule: []
     },
     /**
-     * 当前激活的视频项
+     * 当前激活的视频项 - 没有"已完成"的项
      */
     activeVideo: {
-      semantic: [
-        '[aria-current="true"]'
-      ],
+      semantic: [],
       structural: [],
-      cssModule: [
-        '[class*="actived-"]',
-        '[class*="active-"]',
-        '[class*="current-"]'
-      ]
+      cssModule: []
     },
     /**
-     * 已完成的视频项
+     * 已完成的视频项 - 包含"已完成"文本或 check 图标
      */
     completedVideo: {
       semantic: [],
       structural: [],
-      cssModule: [
-        '[class*="success-"]',
-        '[class*="completed-"]',
-        '[class*="finished-"]'
-      ],
+      cssModule: [],
       text: ["已完成"]
     },
     /**
@@ -213,24 +200,6 @@
     }
     return null;
   }
-  function matchesSelector(element, config) {
-    var _a;
-    if (!element) return false;
-    for (const selector of config.semantic) {
-      if (element.matches(selector)) return true;
-    }
-    for (const selector of config.structural) {
-      if (element.matches(selector)) return true;
-    }
-    for (const selector of config.cssModule) {
-      if (element.matches(selector)) return true;
-    }
-    if (config.text) {
-      const text = ((_a = element.textContent) == null ? void 0 : _a.trim()) || "";
-      if (config.text.some((t) => text.includes(t))) return true;
-    }
-    return false;
-  }
   function validateSelectors() {
     const results = {};
     for (const [name, config] of Object.entries(SELECTORS)) {
@@ -290,12 +259,13 @@
     startObserver() {
       this.stopObserver();
       this.observer = new MutationObserver((mutations) => {
+        var _a;
         for (const mutation of mutations) {
           if (mutation.type === "childList") {
             for (const node of mutation.addedNodes) {
               if (node.nodeType === Node.ELEMENT_NODE) {
                 const el = node;
-                if (el.tagName === "VIDEO" || el.querySelector("video")) {
+                if (el.tagName === "VIDEO" || ((_a = el.querySelector) == null ? void 0 : _a.call(el, "video"))) {
                   DebugLogger.debug("AutoPlay", "检测到 video 元素添加");
                   this.tryAttachVideoListener();
                 }
@@ -304,11 +274,7 @@
           }
         }
       });
-      this.observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      DebugLogger.debug("AutoPlay", "MutationObserver 已启动");
+      this.observer.observe(document.body, { childList: true, subtree: true });
     }
     stopObserver() {
       if (this.observer) {
@@ -362,82 +328,77 @@
         DebugLogger.debug("AutoPlay", "切换冷却中，跳过");
         return;
       }
-      const activeVideo = this.findActiveVideo();
-      if (!activeVideo) {
-        DebugLogger.debug("AutoPlay", "未找到当前激活的视频项");
+      const videoList = this.findVideoList();
+      if (!videoList) {
+        DebugLogger.debug("AutoPlay", "未找到视频列表");
         return;
       }
-      const nextVideo = this.findNextVideo(activeVideo);
-      if (nextVideo) {
+      const items = this.getVideoItems(videoList);
+      DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
+      const currentIdx = this.findCurrentVideoIndex(items);
+      if (currentIdx === -1) {
+        DebugLogger.debug("AutoPlay", "未找到当前视频");
+        return;
+      }
+      DebugLogger.debug("AutoPlay", `当前视频索引: ${currentIdx}`);
+      const nextItem = this.findNextVideoItem(items, currentIdx);
+      if (nextItem) {
         this.lastSwitchTime = now;
-        DebugLogger.log("AutoPlay", `准备切换，目标元素: ${nextVideo.className}`);
-        DebugLogger.log("AutoPlay", `目标元素内容: ${(_a = nextVideo.textContent) == null ? void 0 : _a.substring(0, 50)}`);
-        const clickTarget = nextVideo.querySelector('[class*="title"], [class*="name"], a, span') || nextVideo;
-        DebugLogger.log("AutoPlay", `点击目标: ${clickTarget.className}`);
-        clickTarget.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        const title = ((_a = nextItem.textContent) == null ? void 0 : _a.substring(0, 30)) || "";
+        DebugLogger.log("AutoPlay", `准备切换到: ${title}`);
+        this.clickVideoItem(nextItem);
         DebugLogger.log("AutoPlay", "已自动切换下一个视频");
       } else {
         DebugLogger.debug("AutoPlay", "没有更多视频");
       }
     }
-    findNextVideo(current) {
-      var _a;
-      let next = current.nextElementSibling;
-      while (next) {
-        if (this.isVideoItem(next) && !this.isCompleted(next)) {
-          return next;
-        }
-        next = next.nextElementSibling;
-      }
-      next = current.nextElementSibling;
-      while (next) {
-        if (this.isVideoItem(next)) {
-          return next;
-        }
-        next = next.nextElementSibling;
-      }
-      const firstChild = (_a = current.parentElement) == null ? void 0 : _a.firstElementChild;
-      if (firstChild && firstChild !== current && this.isVideoItem(firstChild)) {
-        return firstChild;
-      }
-      return null;
-    }
-    findActiveVideo() {
-      const semanticEl = findElement(SELECTORS.activeVideo);
-      if (semanticEl) {
-        DebugLogger.debug("AutoPlay", "通过语义化选择器找到激活视频", semanticEl.className);
-        return semanticEl;
-      }
+    findVideoList() {
       const container = findElement(SELECTORS.videoList);
-      if (!container) {
-        DebugLogger.debug("AutoPlay", "未找到视频列表容器");
-        return null;
-      }
-      const items = container.querySelectorAll('[class*="video-item-"], [class*="video-"]');
-      DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
-      for (const item of items) {
-        if (matchesSelector(item, SELECTORS.activeVideo)) {
-          DebugLogger.debug("AutoPlay", "通过 matchesSelector 找到激活视频", item.className);
-          return item;
-        }
-      }
-      for (const item of items) {
-        const style = window.getComputedStyle(item);
-        if (style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent" && style.backgroundColor !== "rgb(255, 255, 255)") {
-          return item;
+      if (container) return container;
+      const lists = document.querySelectorAll("ul, ol");
+      for (const list of lists) {
+        const items = list.querySelectorAll("li");
+        if (items.length > 5) {
+          return list;
         }
       }
       return null;
     }
-    isCompleted(item) {
-      return matchesSelector(item, SELECTORS.completedVideo);
+    getVideoItems(container) {
+      const items = container.querySelectorAll("li");
+      return Array.from(items);
     }
-    isVideoItem(item) {
-      const className = item.className || "";
-      if (className.includes("noMore") || className.includes("no-more") || className.includes("footer")) {
-        return false;
+    findCurrentVideoIndex(items) {
+      for (let i = 0; i < items.length; i++) {
+        if (this.isCurrentVideo(items[i])) {
+          return i;
+        }
       }
-      return className.includes("video-item") || className.includes("video-");
+      return -1;
+    }
+    isCurrentVideo(item) {
+      const text = item.textContent || "";
+      return !text.includes("已完成") && !text.includes("没有更多");
+    }
+    findNextVideoItem(items, currentIndex) {
+      for (let i = currentIndex + 1; i < items.length; i++) {
+        const item = items[i];
+        const text = item.textContent || "";
+        if (text.includes("没有更多")) continue;
+        return item;
+      }
+      if (currentIndex > 0) {
+        return items[0];
+      }
+      return null;
+    }
+    clickVideoItem(item) {
+      const titleEl = item.querySelector('[class*="title"], [class*="name"], a, span');
+      const clickTarget = titleEl || item;
+      DebugLogger.debug("AutoPlay", `点击元素: ${clickTarget.tagName} ${clickTarget.className}`);
+      clickTarget.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+      );
     }
   }
   class AutoSkip {
