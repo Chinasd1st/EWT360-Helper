@@ -149,7 +149,15 @@ export class AutoPlay {
       this.lastSwitchTime = now;
       const title = nextItem.textContent?.substring(0, 30) || '';
       DebugLogger.log('AutoPlay', `准备切换到: ${title}`);
-      nextItem.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+
+      // 尝试点击 lessontitle 或直接 click 整个项
+      const titleEl = nextItem.querySelector('[class*="lessontitle-"]');
+      if (titleEl) {
+        (titleEl as HTMLElement).click();
+      } else {
+        nextItem.click();
+      }
+
       DebugLogger.log('AutoPlay', '已自动切换下一个视频');
     } else {
       DebugLogger.debug('AutoPlay', '没有更多视频');
