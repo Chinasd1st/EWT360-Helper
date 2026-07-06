@@ -27,11 +27,9 @@ export class AutoPlay {
   private config: AutoPlayConfig;
   private currentMode: PlayMode = PlayMode.PROGRESS_85;
   private lastSwitchTime: number = 0;
-  private boundSwitchToNext: () => void;
 
   constructor(config: Partial<AutoPlayConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.boundSwitchToNext = this.switchToNext.bind(this);
   }
 
   toggle(isEnabled: boolean): void {
@@ -43,7 +41,6 @@ export class AutoPlay {
       DebugLogger.debug('AutoPlay', '自动连播已运行');
       return;
     }
-
     this.startObserver();
     this.tryAttachVideoListener();
     this.intervalId = window.setInterval(() => this.checkProgress(), this.config.checkInterval);
@@ -62,29 +59,12 @@ export class AutoPlay {
 
   setMode(mode: PlayMode): void {
     this.currentMode = mode;
-    if (mode === PlayMode.PROGRESS_85) {
-      this.config.progressThreshold = 0.85;
-    }
     DebugLogger.log('AutoPlay', `连播模式已切换：${mode === PlayMode.PROGRESS_85 ? '85%进度' : '看完后'}`);
   }
 
   private startObserver(): void {
     this.stopObserver();
-    this.observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === 'childList') {
-          for (const node of mutation.addedNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const el = node as HTMLElement;
-              if (el.tagName === 'VIDEO' || el.querySelector?.('video')) {
-                DebugLogger.debug('AutoPlay', '检测到 video 元素添加');
-                this.tryAttachVideoListener();
-              }
-            }
-          }
-        }
-      }
-    });
+    this.observer = new MutationObserver(() => this.tryAttachVideoListener());
     this.observer.observe(document.body, { childList: true, subtree: true });
   }
 
@@ -103,11 +83,10 @@ export class AutoPlay {
     this.detachVideoListener();
     this.videoEndedHandler = () => {
       DebugLogger.log('AutoPlay', '视频 ended 事件触发');
-      this.switchToNext();
+      setTimeout(() => this.switchToNext(), 500);
     };
     video.addEventListener('ended', this.videoEndedHandler);
     (video as any).__ewtAttached = true;
-    DebugLogger.debug('AutoPlay', '已绑定 video ended 事件');
   }
 
   private detachVideoListener(): void {
@@ -127,13 +106,10 @@ export class AutoPlay {
 
       if (this.currentMode !== PlayMode.PROGRESS_85) return;
 
-      const current = video.currentTime;
-      const total = video.duration;
-      if (isNaN(total) || total <= 0) return;
+      const { currentTime, duration } = video;
+      if (isNaN(duration) || duration <= 0) return;
 
-      const progress = current / total;
-      DebugLogger.debug('AutoPlay', `进度: ${(progress * 100).toFixed(1)}%`);
-
+      const progress = currentTime / duration;
       if (progress >= this.config.progressThreshold) {
         this.switchToNext();
       }
@@ -149,104 +125,50 @@ export class AutoPlay {
       return;
     }
 
-    const videoList = this.findVideoList();
-    if (!videoList) {
-      DebugLogger.debug('AutoPlay', '未找到视频列表');
+    const container = findElement(SELECTORS.videoList);
+    if (!container) {
+      DebugLogger.debug('AutoPlay', '未找到视频列表容器');
       return;
     }
 
-    const items = this.getVideoItems(videoList);
+    const items = Array.from(container.children).filter(
+      el => !matchesSelector(el as HTMLElement, SELECTORS.noMoreVideo)
+    ) as HTMLElement[];
     DebugLogger.debug('AutoPlay', `找到 ${items.length} 个视频项`);
 
-    const currentIdx = this.findCurrentVideoIndex(items);
+    const currentIdx = items.findIndex(item => matchesSelector(item, SELECTORS.activeVideo));
     if (currentIdx === -1) {
-      DebugLogger.debug('AutoPlay', '未找到当前视频');
+      DebugLogger.debug('AutoPlay', '未找到当前激活视频');
       return;
     }
 
     DebugLogger.debug('AutoPlay', `当前视频索引: ${currentIdx}`);
 
-    const nextItem = this.findNextVideoItem(items, currentIdx);
+    const nextItem = this.findNextItem(items, currentIdx);
     if (nextItem) {
       this.lastSwitchTime = now;
       const title = nextItem.textContent?.substring(0, 30) || '';
       DebugLogger.log('AutoPlay', `准备切换到: ${title}`);
-      this.clickVideoItem(nextItem);
+      nextItem.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       DebugLogger.log('AutoPlay', '已自动切换下一个视频');
     } else {
       DebugLogger.debug('AutoPlay', '没有更多视频');
     }
   }
 
-  private findVideoList(): HTMLElement | null {
-    // 尝试通过选择器找到视频列表容器
-    const container = findElement(SELECTORS.videoList);
-    if (container) return container;
-
-    // 回退：查找包含多个 li 的 ul 或 ol
-    const lists = document.querySelectorAll('ul, ol');
-    for (const list of lists) {
-      const items = list.querySelectorAll('li');
-      if (items.length > 5) {
-        // 可能是视频列表（有多个项）
-        return list as HTMLElement;
-      }
-    }
-
-    return null;
-  }
-
-  private getVideoItems(container: HTMLElement): HTMLElement[] {
-    // 获取所有 li 元素
-    const items = container.querySelectorAll('li');
-    return Array.from(items) as HTMLElement[];
-  }
-
-  private findCurrentVideoIndex(items: HTMLElement[]): number {
-    for (let i = 0; i < items.length; i++) {
-      if (this.isCurrentVideo(items[i])) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  private isCurrentVideo(item: HTMLElement): boolean {
-    const text = item.textContent || '';
-    // 当前视频没有"已完成"文本
-    return !text.includes('已完成') && !text.includes('没有更多');
-  }
-
-  private findNextVideoItem(items: HTMLElement[], currentIndex: number): HTMLElement | null {
-    // 从当前索引的下一个开始找
+  private findNextItem(items: HTMLElement[], currentIndex: number): HTMLElement | null {
+    // 1. 找下一个未完成的视频
     for (let i = currentIndex + 1; i < items.length; i++) {
-      const item = items[i];
-      const text = item.textContent || '';
-      
-      // 跳过"没有更多视频任务了"
-      if (text.includes('没有更多')) continue;
-      
-      // 找到下一个视频项（无论是否完成）
-      return item;
+      if (!matchesSelector(items[i], SELECTORS.completedVideo)) {
+        return items[i];
+      }
     }
-    
-    // 如果没有找到，循环到第一个视频
-    if (currentIndex > 0) {
-      return items[0];
+    // 2. 全部已完成，找下一个视频（循环播放）
+    for (let i = currentIndex + 1; i < items.length; i++) {
+      return items[i];
     }
-    
+    // 3. 到末尾，回到第一个
+    if (currentIndex > 0) return items[0];
     return null;
-  }
-
-  private clickVideoItem(item: HTMLElement): void {
-    // 尝试点击标题或整个项
-    const titleEl = item.querySelector('[class*="title"], [class*="name"], a, span');
-    const clickTarget = titleEl || item;
-    
-    DebugLogger.debug('AutoPlay', `点击元素: ${(clickTarget as HTMLElement).tagName} ${(clickTarget as HTMLElement).className}`);
-    
-    (clickTarget as HTMLElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true, cancelable: true, view: window })
-    );
   }
 }

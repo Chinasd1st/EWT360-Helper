@@ -54,42 +54,53 @@ export const SELECTORS = {
    */
   videoList: {
     semantic: [],
-    structural: [
-      '.task-list-container-PwS3c',
-      '.play_video_main_content_box'
-    ],
+    structural: [],
     cssModule: [
-      '[class*="task-list-container"]',
-      '[class*="task-list"]'
+      '[class*="listCon-"]'
     ]
   } as SelectorConfig,
 
   /**
-   * 视频项 - 使用 li 元素
+   * 视频项
    */
   videoItem: {
     semantic: [],
     structural: [],
-    cssModule: []
+    cssModule: [
+      '[class*="item-"][class*="item"]'
+    ]
   } as SelectorConfig,
 
   /**
-   * 当前激活的视频项 - 没有"已完成"的项
+   * 当前激活的视频项
    */
   activeVideo: {
     semantic: [],
     structural: [],
-    cssModule: []
+    cssModule: [
+      '[class*="active-"]'
+    ]
   } as SelectorConfig,
 
   /**
-   * 已完成的视频项 - 包含"已完成"文本或 check 图标
+   * 已完成的视频项
    */
   completedVideo: {
     semantic: [],
     structural: [],
     cssModule: [],
     text: ['已完成']
+  } as SelectorConfig,
+
+  /**
+   * 没有更多视频的提示
+   */
+  noMoreVideo: {
+    semantic: [],
+    structural: [],
+    cssModule: [
+      '[class*="noMore-"]'
+    ]
   } as SelectorConfig,
 
   /**
