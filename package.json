@@ -1,6 +1,6 @@
 {
   "name": "ewt360-helper",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "升学E网通助手 - 自动连播、自动过检、自动跳题、强制倍速",
   "main": "dist/main.user.js",
   "scripts": {

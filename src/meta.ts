@@ -4,7 +4,7 @@
 export const meta = {
   name: '升学E网通助手 v3',
   namespace: 'https://github.com/Chinasd1st/EWT360-Helper',
-  version: '3.0.0',
+  version: '3.0.1',
   description: '用于帮助学生通过升学E网通更好学习知识',
   author: 'Chinasd1st',
   icon: 'https://www.ewt360.com/favicon.ico',
