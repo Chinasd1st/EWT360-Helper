@@ -60,48 +60,35 @@ export const SELECTORS = {
     ],
     cssModule: [
       '[class*="task-list-container"]',
-      '[class*="videos-"]'
+      '[class*="task-list"]'
     ]
   } as SelectorConfig,
 
   /**
-   * 视频项
+   * 视频项 - 使用 li 元素
    */
   videoItem: {
     semantic: [],
     structural: [],
-    cssModule: [
-      '[class*="video-item-"]',
-      '[class*="video-"]'
-    ]
+    cssModule: []
   } as SelectorConfig,
 
   /**
-   * 当前激活的视频项
+   * 当前激活的视频项 - 没有"已完成"的项
    */
   activeVideo: {
-    semantic: [
-      '[aria-current="true"]'
-    ],
+    semantic: [],
     structural: [],
-    cssModule: [
-      '[class*="actived-"]',
-      '[class*="active-"]',
-      '[class*="current-"]'
-    ]
+    cssModule: []
   } as SelectorConfig,
 
   /**
-   * 已完成的视频项
+   * 已完成的视频项 - 包含"已完成"文本或 check 图标
    */
   completedVideo: {
     semantic: [],
     structural: [],
-    cssModule: [
-      '[class*="success-"]',
-      '[class*="completed-"]',
-      '[class*="finished-"]'
-    ],
+    cssModule: [],
     text: ['已完成']
   } as SelectorConfig,
 
