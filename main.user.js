@@ -328,7 +328,7 @@
       }
     }
     switchToNext() {
-      var _a;
+      var _a, _b;
       const now = Date.now();
       if (now - this.lastSwitchTime < 3e3) {
         DebugLogger.debug("AutoPlay", "切换冷却中，跳过");
@@ -343,7 +343,8 @@
         (el) => !matchesSelector(el, SELECTORS.noMoreVideo)
       );
       DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
-      const currentIdx = items.findIndex((item) => matchesSelector(item, SELECTORS.activeVideo));
+      const urlLessonId = (_a = window.location.hash.match(/lessonId=(\d+)/)) == null ? void 0 : _a[1];
+      const currentIdx = urlLessonId ? items.findIndex((item) => (item.className || "").includes(`item${urlLessonId}`)) : items.findIndex((item) => matchesSelector(item, SELECTORS.activeVideo));
       if (currentIdx === -1) {
         DebugLogger.debug("AutoPlay", "未找到当前激活视频");
         return;
@@ -352,15 +353,18 @@
       const nextItem = this.findNextItem(items, currentIdx);
       if (nextItem) {
         this.lastSwitchTime = now;
-        const title = ((_a = nextItem.textContent) == null ? void 0 : _a.substring(0, 30)) || "";
-        DebugLogger.log("AutoPlay", `准备切换到: ${title}`);
-        const titleEl = nextItem.querySelector('[class*="lessontitle-"]');
-        if (titleEl) {
-          titleEl.click();
-        } else {
-          nextItem.click();
+        const title = ((_b = nextItem.textContent) == null ? void 0 : _b.substring(0, 30)) || "";
+        const match = (nextItem.className || "").match(/item(\d+)/);
+        if (!match) {
+          DebugLogger.debug("AutoPlay", "无法提取 lessonId");
+          return;
         }
-        DebugLogger.log("AutoPlay", "已自动切换下一个视频");
+        const lessonId = match[1];
+        DebugLogger.log("AutoPlay", `准备切换到: ${title} (lessonId=${lessonId})`);
+        const url = new URL(window.location.href);
+        url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${lessonId}`);
+        window.location.href = url.href;
+        DebugLogger.log("AutoPlay", "已切换");
       } else {
         DebugLogger.debug("AutoPlay", "没有更多视频");
       }
