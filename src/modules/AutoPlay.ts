@@ -136,7 +136,11 @@ export class AutoPlay {
     ) as HTMLElement[];
     DebugLogger.debug('AutoPlay', `找到 ${items.length} 个视频项`);
 
-    const currentIdx = items.findIndex(item => matchesSelector(item, SELECTORS.activeVideo));
+    // 通过 URL 中的 lessonId 找到当前视频索引
+    const urlLessonId = window.location.hash.match(/lessonId=(\d+)/)?.[1];
+    const currentIdx = urlLessonId
+      ? items.findIndex(item => (item.className || '').includes(`item${urlLessonId}`))
+      : items.findIndex(item => matchesSelector(item, SELECTORS.activeVideo));
     if (currentIdx === -1) {
       DebugLogger.debug('AutoPlay', '未找到当前激活视频');
       return;
@@ -148,17 +152,23 @@ export class AutoPlay {
     if (nextItem) {
       this.lastSwitchTime = now;
       const title = nextItem.textContent?.substring(0, 30) || '';
-      DebugLogger.log('AutoPlay', `准备切换到: ${title}`);
 
-      // 尝试点击 lessontitle 或直接 click 整个项
-      const titleEl = nextItem.querySelector('[class*="lessontitle-"]');
-      if (titleEl) {
-        (titleEl as HTMLElement).click();
-      } else {
-        nextItem.click();
+      // 从 class 中提取 lessonId: item155136 -> 155136
+      const match = (nextItem.className || '').match(/item(\d+)/);
+      if (!match) {
+        DebugLogger.debug('AutoPlay', '无法提取 lessonId');
+        return;
       }
+      const lessonId = match[1];
 
-      DebugLogger.log('AutoPlay', '已自动切换下一个视频');
+      DebugLogger.log('AutoPlay', `准备切换到: ${title} (lessonId=${lessonId})`);
+
+      // 直接修改 URL hash 中的 lessonId 来切换视频
+      const url = new URL(window.location.href);
+      url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${lessonId}`);
+      window.location.href = url.href;
+
+      DebugLogger.log('AutoPlay', '已切换');
     } else {
       DebugLogger.debug('AutoPlay', '没有更多视频');
     }
