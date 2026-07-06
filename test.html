@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EWT360 Helper 本地测试</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #333; margin-bottom: 20px; }
+        .status { padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        .test-area { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px; }
+        .btn-primary { background: #4CAF50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn:hover { opacity: 0.9; }
+        #log { margin-top: 20px; padding: 15px; background: #1e1e1e; color: #d4d4d4; border-radius: 5px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+        .log-info { color: #4fc3f7; }
+        .log-success { color: #81c784; }
+        .log-error { color: #e57373; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>EWT360 Helper 本地测试</h1>
+        
+        <div class="test-area">
+            <h2>脚本状态</h2>
+            <div id="scriptStatus" class="status info">检测中...</div>
+            
+            <h2 style="margin-top: 20px;">功能测试</h2>
+            <button class="btn btn-primary" onclick="testGUI()">测试 GUI 加载</button>
+            <button class="btn btn-primary" onclick="testModules()">测试模块定义</button>
+            <button class="btn btn-primary" onclick="testLocalStorage()">测试配置存储</button>
+            <button class="btn btn-danger" onclick="clearLog()">清除日志</button>
+            
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // 模拟 EWT360 页面结构
+        document.body.innerHTML += `
+            <div style="display:none;">
+                <div class="ewt-helper-container"></div>
+            </div>
+        `;
+
+        const logDiv = document.getElementById('log');
+        
+        function log(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const className = `log-${type}`;
+            logDiv.innerHTML += `<div class="${className}">[${time}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+
+        // 检测脚本是否加载
+        function checkScript() {
+            const statusDiv = document.getElementById('scriptStatus');
+            if (typeof GUI !== 'undefined') {
+                statusDiv.textContent = '✓ 脚本已加载';
+                statusDiv.className = 'status success';
+                log('脚本已成功加载', 'success');
+            } else {
+                statusDiv.textContent = '✗ 脚本未加载 - 请确保 Tampermonkey 已启用脚本';
+                statusDiv.className = 'status error';
+                log('脚本未加载', 'error');
+            }
+        }
+
+        function testGUI() {
+            try {
+                if (typeof GUI !== 'undefined') {
+                    GUI.init();
+                    log('GUI 初始化成功', 'success');
+                } else {
+                    log('GUI 未定义', 'error');
+                }
+            } catch (e) {
+                log(`GUI 测试失败: ${e.message}`, 'error');
+            }
+        }
+
+        function testModules() {
+            const modules = ['AutoPlay', 'AutoSkip', 'AutoCheckPass', 'SpeedControl', 'ProgressLock', 'ElementFinder'];
+            modules.forEach(mod => {
+                if (typeof window[mod] !== 'undefined') {
+                    log(`✓ ${mod} 已定义`, 'success');
+                } else {
+                    log(`✗ ${mod} 未定义`, 'error');
+                }
+            });
+        }
+
+        function testLocalStorage() {
+            try {
+                const key = 'ewt_helper_config';
+                const testValue = { test: true };
+                localStorage.setItem(key, JSON.stringify(testValue));
+                const retrieved = JSON.parse(localStorage.getItem(key));
+                if (retrieved.test === true) {
+                    log('✓ localStorage 读写正常', 'success');
+                    localStorage.removeItem(key);
+                } else {
+                    log('✗ localStorage 数据不一致', 'error');
+                }
+            } catch (e) {
+                log(`localStorage 测试失败: ${e.message}`, 'error');
+            }
+        }
+
+        // 启动时检测
+        window.addEventListener('load', () => {
+            setTimeout(checkScript, 1000);
+            log('测试页面已加载', 'info');
+        });
+    </script>
+</body>
+</html>

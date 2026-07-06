@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "打开 EWT360 测试页面",
+      "type": "chrome",
+      "request": "launch",
+      "url": "https://teacher.ewt360.com/ewtbend/bend/index/index.html#/homework/play-videos?role=student&courseId=37189&lessonId=55136&videoType=1&homeworkId=10395894&onlyMustLearn=1&isNewPlayer=1&videoPoint=0&date=1755187200000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true
+    }
+  ]
+}
