@@ -136,11 +136,17 @@ export class AutoPlay {
     ) as HTMLElement[];
     DebugLogger.debug('AutoPlay', `找到 ${items.length} 个视频项`);
 
-    // 通过 URL 中的 lessonId 找到当前视频索引
-    const urlLessonId = window.location.hash.match(/lessonId=(\d+)/)?.[1];
-    const currentIdx = urlLessonId
-      ? items.findIndex(item => (item.className || '').includes(`item${urlLessonId}`))
-      : items.findIndex(item => matchesSelector(item, SELECTORS.activeVideo));
+    // 优先通过 active- 类名找当前视频，回退到 URL lessonId
+    let currentIdx = items.findIndex(item => (item.className || '').includes('active-'));
+    if (currentIdx === -1) {
+      const urlLessonId = window.location.hash.match(/lessonId=(\d+)/)?.[1];
+      if (urlLessonId) {
+        currentIdx = items.findIndex(item => {
+          const m = (item.className || '').match(/item(\d+)/);
+          return m && urlLessonId.endsWith(m[1]) || m && m[1]?.endsWith(urlLessonId);
+        });
+      }
+    }
     if (currentIdx === -1) {
       DebugLogger.debug('AutoPlay', '未找到当前激活视频');
       return;
@@ -153,19 +159,19 @@ export class AutoPlay {
       this.lastSwitchTime = now;
       const title = nextItem.textContent?.substring(0, 30) || '';
 
-      // 从 class 中提取 lessonId: item155136 -> 155136
+      // 从 class 中提取 ID: item155136 -> 155136
       const match = (nextItem.className || '').match(/item(\d+)/);
       if (!match) {
-        DebugLogger.debug('AutoPlay', '无法提取 lessonId');
+        DebugLogger.debug('AutoPlay', '无法提取 item ID');
         return;
       }
-      const lessonId = match[1];
+      const itemId = match[1];
 
-      DebugLogger.log('AutoPlay', `准备切换到: ${title} (lessonId=${lessonId})`);
+      DebugLogger.log('AutoPlay', `准备切换到: ${title} (itemId=${itemId})`);
 
       // 直接修改 URL hash 中的 lessonId 来切换视频
       const url = new URL(window.location.href);
-      url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${lessonId}`);
+      url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${itemId}`);
       window.location.href = url.href;
 
       DebugLogger.log('AutoPlay', '已切换');
