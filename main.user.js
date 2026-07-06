@@ -438,11 +438,11 @@ const CourseBrushMode = {
 };
 
 /**
- * 进度条锁定功能
+ * 进度条锁定功能 - 防止自动跳转但允许手动拖动
  */
 const ProgressLock = {
     enabled: false,
-    timer: null,
+    lastTime: 0,
 
     toggle(isEnabled) {
         this.enabled = isEnabled;
@@ -456,30 +456,37 @@ const ProgressLock = {
     },
 
     start() {
-        const lockProgress = () => {
-            const player = ElementFinder.findVideoPlayer();
-            if (player) {
-                const progressElements = player.querySelectorAll('[role="slider"], [class*="progress"], [class*="bar"]');
-                progressElements.forEach(el => {
-                    el.style.pointerEvents = 'none';
-                    el.style.cursor = 'not-allowed';
-                });
+        const video = ElementFinder.findVideoElement();
+        if (!video) return;
+
+        this.lastTime = video.currentTime;
+
+        this.handler = () => {
+            if (!this.enabled) return;
+            const currentTime = video.currentTime;
+            const diff = currentTime - this.lastTime;
+
+            // 检测是否被自动跳转（非用户操作）
+            // 如果时间跳跃超过 2 秒，可能是自动跳转
+            if (Math.abs(diff) > 2 && !video.seeking) {
+                DebugLogger.log('ProgressLock', `检测到自动跳转: ${this.lastTime.toFixed(1)} -> ${currentTime.toFixed(1)}`);
+                video.currentTime = this.lastTime;
+            } else {
+                this.lastTime = currentTime;
             }
         };
-        lockProgress();
-        this.timer = setInterval(lockProgress, 200);
+
+        video.addEventListener('timeupdate', this.handler);
+        DebugLogger.log('ProgressLock', '进度条锁定已启动');
     },
 
     stop() {
-        clearInterval(this.timer);
-        const player = ElementFinder.findVideoPlayer();
-        if (player) {
-            const progressElements = player.querySelectorAll('[role="slider"], [class*="progress"], [class*="bar"]');
-            progressElements.forEach(el => {
-                el.style.pointerEvents = 'auto';
-                el.style.cursor = 'default';
-            });
+        const video = ElementFinder.findVideoElement();
+        if (video && this.handler) {
+            video.removeEventListener('timeupdate', this.handler);
         }
+        this.handler = null;
+        DebugLogger.log('ProgressLock', '进度条锁定已停止');
     }
 };
 
