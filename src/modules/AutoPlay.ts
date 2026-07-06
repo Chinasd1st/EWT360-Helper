@@ -194,27 +194,25 @@ export class AutoPlay {
   private findNextVideo(current: HTMLElement): HTMLElement | null {
     // First try to find next unfinished video
     let next = current.nextElementSibling;
-    let idx = 0;
     while (next) {
-      if (!this.isCompleted(next as HTMLElement)) {
-        DebugLogger.debug('AutoPlay', `找到未完成视频: 第${idx + 1}个`);
+      if (this.isVideoItem(next as HTMLElement) && !this.isCompleted(next as HTMLElement)) {
         return next as HTMLElement;
       }
       next = next.nextElementSibling;
-      idx++;
     }
 
-    // All completed - find next video in list (even if completed)
+    // All completed - find next video item (even if completed)
     next = current.nextElementSibling;
-    if (next) {
-      DebugLogger.debug('AutoPlay', '所有视频已完成，选择下一个');
-      return next as HTMLElement;
+    while (next) {
+      if (this.isVideoItem(next as HTMLElement)) {
+        return next as HTMLElement;
+      }
+      next = next.nextElementSibling;
     }
 
     // At end of list - loop back to first video
     const firstChild = current.parentElement?.firstElementChild;
-    if (firstChild && firstChild !== current) {
-      DebugLogger.debug('AutoPlay', '已到末尾，循环到第一个视频');
+    if (firstChild && firstChild !== current && this.isVideoItem(firstChild as HTMLElement)) {
       return firstChild as HTMLElement;
     }
 
@@ -261,5 +259,15 @@ export class AutoPlay {
 
   private isCompleted(item: HTMLElement): boolean {
     return matchesSelector(item, SELECTORS.completedVideo);
+  }
+
+  private isVideoItem(item: HTMLElement): boolean {
+    const className = item.className || '';
+    // Exclude "noMore" and other non-video elements
+    if (className.includes('noMore') || className.includes('no-more') || className.includes('footer')) {
+      return false;
+    }
+    // Must have video-item class
+    return className.includes('video-item') || className.includes('video-');
   }
 }
