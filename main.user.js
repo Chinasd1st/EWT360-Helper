@@ -451,7 +451,7 @@ const ProgressLock = {
         } else {
             this.stop();
         }
-        GUI.updateToggleState('lockProgress', isEnabled);
+        GUI.setToggleState('lockProgress', isEnabled);
         DebugLogger.log('ProgressLock', `进度条锁定已${isEnabled ? '开启' : '关闭'}`);
     },
 

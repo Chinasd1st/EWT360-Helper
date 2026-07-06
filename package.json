@@ -1,0 +1,27 @@
+{
+  "name": "ewt360-helper",
+  "version": "1.0.0",
+  "description": "![ima](/image/ewt_image.png)",
+  "main": "main.user.js",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui",
+    "test:debug": "npx playwright test --debug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chinasd1st/EWT360-Helper.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Chinasd1st/EWT360-Helper/issues"
+  },
+  "homepage": "https://github.com/Chinasd1st/EWT360-Helper#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}
