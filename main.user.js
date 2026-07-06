@@ -352,11 +352,23 @@
     findComponentHooks() {
       var _a, _b;
       const container = findElement(SELECTORS.videoList);
-      if (!container) return null;
+      if (!container) {
+        DebugLogger.debug("AutoPlay", "videoList 容器未找到");
+        return null;
+      }
       const item = container.querySelector('[class*="item-"]');
-      if (!item) return null;
-      const fiber = this.getReactFiber(item);
-      if (!fiber) return null;
+      if (!item) {
+        DebugLogger.debug("AutoPlay", "item 元素未找到");
+        return null;
+      }
+      const fiberKey = Object.keys(item).find(
+        (k) => k.startsWith("__reactInternalInstance") || k.startsWith("__reactFiber")
+      );
+      if (!fiberKey) {
+        DebugLogger.debug("AutoPlay", "React fiber key 未找到");
+        return null;
+      }
+      const fiber = item[fiberKey];
       let current = fiber;
       let depth = 0;
       while (current && depth < 80) {
@@ -383,7 +395,7 @@
         current = current.return;
         depth++;
       }
-      DebugLogger.error("AutoPlay", "未找到组件 hooks");
+      DebugLogger.debug("AutoPlay", `遍历完成但未匹配 hooks (depth=${depth})`);
       return null;
     }
     /**
@@ -405,7 +417,7 @@
         return false;
       }
     }
-    switchToNext() {
+    switchToNext(attempt = 0) {
       var _a, _b;
       const now = Date.now();
       if (now - this.lastSwitchTime < 3e3) {
@@ -413,7 +425,13 @@
         return;
       }
       const hooks = this.findComponentHooks();
-      if (!hooks) return;
+      if (!hooks) {
+        if (attempt < 5) {
+          DebugLogger.debug("AutoPlay", `hooks 未就绪，${attempt + 1}s 后重试 (${attempt + 1}/5)`);
+          setTimeout(() => this.switchToNext(attempt + 1), 1e3);
+        }
+        return;
+      }
       const videoList = ((_a = hooks.videoListHook) == null ? void 0 : _a.memoizedState) || [];
       const currentVideo = (_b = hooks.currentVideoHook) == null ? void 0 : _b.memoizedState;
       if (!videoList.length || !currentVideo) {
