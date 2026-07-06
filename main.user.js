@@ -52,7 +52,11 @@
     /**
      * 视频元素
      */
-    video: "video",
+    video: {
+      semantic: ["video"],
+      structural: [],
+      cssModule: []
+    },
     /**
      * 视频播放器容器
      */
@@ -313,7 +317,7 @@
       }
     }
     tryAttachVideoListener() {
-      const video = document.querySelector("video");
+      const video = findElement(SELECTORS.video);
       if (!video) return;
       if (this.videoEndedHandler && video.__ewtAttached) return;
       this.detachVideoListener();
@@ -326,7 +330,7 @@
       DebugLogger.debug("AutoPlay", "已绑定 video ended 事件");
     }
     detachVideoListener() {
-      const video = document.querySelector("video");
+      const video = findElement(SELECTORS.video);
       if (video && this.videoEndedHandler) {
         video.removeEventListener("ended", this.videoEndedHandler);
         video.__ewtAttached = false;
@@ -335,7 +339,7 @@
     }
     checkProgress() {
       try {
-        const video = document.querySelector("video");
+        const video = findElement(SELECTORS.video);
         if (!video) return;
         this.tryAttachVideoListener();
         if (this.currentMode !== "progress85") return;
@@ -552,7 +556,7 @@
       DebugLogger.log("ProgressLock", `进度条锁定已${isEnabled ? "开启" : "关闭"}`);
     }
     start() {
-      const video = document.querySelector(SELECTORS.video);
+      const video = findElement(SELECTORS.video);
       if (!video) return;
       this.lastTime = video.currentTime;
       this.handler = () => {
@@ -570,7 +574,7 @@
       DebugLogger.log("ProgressLock", "进度条锁定已启动");
     }
     stop() {
-      const video = document.querySelector(SELECTORS.video);
+      const video = findElement(SELECTORS.video);
       if (video && this.handler) {
         video.removeEventListener("timeupdate", this.handler);
       }
