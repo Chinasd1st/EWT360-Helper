@@ -383,23 +383,21 @@
     findNextVideo(current) {
       var _a;
       let next = current.nextElementSibling;
-      let idx = 0;
       while (next) {
-        if (!this.isCompleted(next)) {
-          DebugLogger.debug("AutoPlay", `找到未完成视频: 第${idx + 1}个`);
+        if (this.isVideoItem(next) && !this.isCompleted(next)) {
           return next;
         }
         next = next.nextElementSibling;
-        idx++;
       }
       next = current.nextElementSibling;
-      if (next) {
-        DebugLogger.debug("AutoPlay", "所有视频已完成，选择下一个");
-        return next;
+      while (next) {
+        if (this.isVideoItem(next)) {
+          return next;
+        }
+        next = next.nextElementSibling;
       }
       const firstChild = (_a = current.parentElement) == null ? void 0 : _a.firstElementChild;
-      if (firstChild && firstChild !== current) {
-        DebugLogger.debug("AutoPlay", "已到末尾，循环到第一个视频");
+      if (firstChild && firstChild !== current && this.isVideoItem(firstChild)) {
         return firstChild;
       }
       return null;
@@ -433,6 +431,13 @@
     }
     isCompleted(item) {
       return matchesSelector(item, SELECTORS.completedVideo);
+    }
+    isVideoItem(item) {
+      const className = item.className || "";
+      if (className.includes("noMore") || className.includes("no-more") || className.includes("footer")) {
+        return false;
+      }
+      return className.includes("video-item") || className.includes("video-");
     }
   }
   class AutoSkip {
