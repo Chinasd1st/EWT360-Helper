@@ -160,15 +160,30 @@ export class AutoPlay {
    * 从 sidebar item 向上遍历，找到包含 videoList + currentVideo hooks 的组件
    */
   private findComponentHooks(): { videoListHook: HookState; currentVideoHook: HookState } | null {
+    // 1. 找容器
     const container = findElement(SELECTORS.videoList);
-    if (!container) return null;
+    if (!container) {
+      DebugLogger.debug('AutoPlay', 'videoList 容器未找到');
+      return null;
+    }
 
+    // 2. 找 item
     const item = container.querySelector('[class*="item-"]') as HTMLElement;
-    if (!item) return null;
+    if (!item) {
+      DebugLogger.debug('AutoPlay', 'item 元素未找到');
+      return null;
+    }
 
-    const fiber = this.getReactFiber(item);
-    if (!fiber) return null;
+    // 3. 找 React fiber key
+    const fiberKey = Object.keys(item).find(k =>
+      k.startsWith('__reactInternalInstance') || k.startsWith('__reactFiber')
+    );
+    if (!fiberKey) {
+      DebugLogger.debug('AutoPlay', 'React fiber key 未找到');
+      return null;
+    }
 
+    const fiber = (item as any)[fiberKey];
     let current: any = fiber;
     let depth = 0;
 
@@ -205,7 +220,7 @@ export class AutoPlay {
       depth++;
     }
 
-    DebugLogger.error('AutoPlay', '未找到组件 hooks');
+    DebugLogger.debug('AutoPlay', `遍历完成但未匹配 hooks (depth=${depth})`);
     return null;
   }
 
@@ -229,7 +244,7 @@ export class AutoPlay {
     }
   }
 
-  private switchToNext(): void {
+  private switchToNext(attempt: number = 0): void {
     const now = Date.now();
     if (now - this.lastSwitchTime < 3000) {
       DebugLogger.debug('AutoPlay', '切换冷却中，跳过');
@@ -237,7 +252,14 @@ export class AutoPlay {
     }
 
     const hooks = this.findComponentHooks();
-    if (!hooks) return;
+    if (!hooks) {
+      // React hooks 可能还没准备好，重试（最多 5 次，间隔 1s）
+      if (attempt < 5) {
+        DebugLogger.debug('AutoPlay', `hooks 未就绪，${attempt + 1}s 后重试 (${attempt + 1}/5)`);
+        setTimeout(() => this.switchToNext(attempt + 1), 1000);
+      }
+      return;
+    }
 
     const videoList: any[] = hooks.videoListHook?.memoizedState || [];
     const currentVideo: any = hooks.currentVideoHook?.memoizedState;
