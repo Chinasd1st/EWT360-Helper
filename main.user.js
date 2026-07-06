@@ -354,7 +354,12 @@
         this.lastSwitchTime = now;
         const title = ((_a = nextItem.textContent) == null ? void 0 : _a.substring(0, 30)) || "";
         DebugLogger.log("AutoPlay", `准备切换到: ${title}`);
-        nextItem.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        const titleEl = nextItem.querySelector('[class*="lessontitle-"]');
+        if (titleEl) {
+          titleEl.click();
+        } else {
+          nextItem.click();
+        }
         DebugLogger.log("AutoPlay", "已自动切换下一个视频");
       } else {
         DebugLogger.debug("AutoPlay", "没有更多视频");
