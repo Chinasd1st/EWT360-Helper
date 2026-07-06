@@ -75,9 +75,21 @@
      */
     videoList: {
       semantic: [],
-      structural: [],
+      structural: [
+        '[class*="lessonList"] [class*="listCon"]'
+      ],
       cssModule: [
         '[class*="listCon-"]'
+      ]
+    },
+    /**
+     * 学生播放器页面容器
+     */
+    studentPlayer: {
+      semantic: [],
+      structural: [],
+      cssModule: [
+        '[class*="studentPlayer-"]'
       ]
     },
     /**
@@ -210,24 +222,6 @@
     }
     return null;
   }
-  function matchesSelector(element, config) {
-    var _a;
-    if (!element) return false;
-    for (const selector of config.semantic) {
-      if (element.matches(selector)) return true;
-    }
-    for (const selector of config.structural) {
-      if (element.matches(selector)) return true;
-    }
-    for (const selector of config.cssModule) {
-      if (element.matches(selector)) return true;
-    }
-    if (config.text) {
-      const text = ((_a = element.textContent) == null ? void 0 : _a.trim()) || "";
-      if (config.text.some((t) => text.includes(t))) return true;
-    }
-    return false;
-  }
   function validateSelectors() {
     const results = {};
     for (const [name, config] of Object.entries(SELECTORS)) {
@@ -252,6 +246,7 @@
       this.videoEndedHandler = null;
       this.currentMode = "progress85";
       this.lastSwitchTime = 0;
+      this.videoEndedFired = false;
       this.config = { ...DEFAULT_CONFIG, ...config };
     }
     toggle(isEnabled) {
@@ -282,7 +277,9 @@
     }
     startObserver() {
       this.stopObserver();
-      this.observer = new MutationObserver(() => this.tryAttachVideoListener());
+      this.observer = new MutationObserver(() => {
+        this.tryAttachVideoListener();
+      });
       this.observer.observe(document.body, { childList: true, subtree: true });
     }
     stopObserver() {
@@ -297,11 +294,14 @@
       if (this.videoEndedHandler && video.__ewtAttached) return;
       this.detachVideoListener();
       this.videoEndedHandler = () => {
+        if (this.videoEndedFired) return;
+        this.videoEndedFired = true;
         DebugLogger.log("AutoPlay", "视频 ended 事件触发");
         setTimeout(() => this.switchToNext(), 500);
       };
       video.addEventListener("ended", this.videoEndedHandler);
       video.__ewtAttached = true;
+      DebugLogger.debug("AutoPlay", "已绑定 ended 事件");
     }
     detachVideoListener() {
       const video = findElement(SELECTORS.video);
@@ -316,15 +316,93 @@
         const video = findElement(SELECTORS.video);
         if (!video) return;
         this.tryAttachVideoListener();
-        if (this.currentMode !== "progress85") return;
-        const { currentTime, duration } = video;
+        const { currentTime, duration, ended } = video;
         if (isNaN(duration) || duration <= 0) return;
-        const progress = currentTime / duration;
-        if (progress >= this.config.progressThreshold) {
-          this.switchToNext();
+        if (ended && !this.videoEndedFired) {
+          this.videoEndedFired = true;
+          DebugLogger.log("AutoPlay", "checkProgress 检测到 video.ended");
+          setTimeout(() => this.switchToNext(), 500);
+          return;
+        }
+        if (this.currentMode === "progress85") {
+          const progress = currentTime / duration;
+          if (progress >= this.config.progressThreshold) {
+            if (!this.videoEndedFired) {
+              this.videoEndedFired = true;
+              DebugLogger.log("AutoPlay", `checkProgress 达到阈值 ${Math.round(progress * 100)}%`);
+              this.switchToNext();
+            }
+          }
         }
       } catch (error) {
         DebugLogger.error("AutoPlay", "检查进度出错", error);
+      }
+    }
+    // ========== React Fiber 工具函数 ==========
+    getReactFiber(element) {
+      const key = Object.keys(element).find(
+        (k) => k.startsWith("__reactInternalInstance") || k.startsWith("__reactFiber")
+      );
+      if (!key) return null;
+      return element[key];
+    }
+    /**
+     * 从 sidebar item 向上遍历，找到包含 videoList + currentVideo hooks 的组件
+     */
+    findComponentHooks() {
+      var _a, _b;
+      const container = findElement(SELECTORS.videoList);
+      if (!container) return null;
+      const item = container.querySelector('[class*="item-"]');
+      if (!item) return null;
+      const fiber = this.getReactFiber(item);
+      if (!fiber) return null;
+      let current = fiber;
+      let depth = 0;
+      while (current && depth < 80) {
+        if (current.memoizedState) {
+          let hook = current.memoizedState;
+          let videoListHook = null;
+          let currentVideoHook = null;
+          while (hook) {
+            const state = hook.memoizedState;
+            const hasDispatch = typeof ((_a = hook.queue) == null ? void 0 : _a.dispatch) === "function";
+            if (!videoListHook && Array.isArray(state) && state.length > 0 && ((_b = state[0]) == null ? void 0 : _b.lessonId)) {
+              videoListHook = hook;
+            }
+            if (!currentVideoHook && hasDispatch && !Array.isArray(state) && state && typeof state === "object" && state.lessonId && state.title && state.contentUrl) {
+              currentVideoHook = hook;
+            }
+            hook = hook.next;
+          }
+          if (videoListHook && currentVideoHook) {
+            DebugLogger.debug("AutoPlay", `找到 hooks (depth=${depth})`);
+            return { videoListHook, currentVideoHook };
+          }
+        }
+        current = current.return;
+        depth++;
+      }
+      DebugLogger.error("AutoPlay", "未找到组件 hooks");
+      return null;
+    }
+    /**
+     * 通过 dispatch 切换视频
+     */
+    switchVideo(targetVideo) {
+      var _a, _b;
+      const hooks = this.findComponentHooks();
+      if (!((_b = (_a = hooks == null ? void 0 : hooks.currentVideoHook) == null ? void 0 : _a.queue) == null ? void 0 : _b.dispatch)) {
+        DebugLogger.error("AutoPlay", "未找到 currentVideo dispatch");
+        return false;
+      }
+      try {
+        hooks.currentVideoHook.queue.dispatch(targetVideo);
+        DebugLogger.log("AutoPlay", `dispatch 切换到: ${targetVideo.title}`);
+        return true;
+      } catch (e) {
+        DebugLogger.error("AutoPlay", "dispatch 切换失败", e);
+        return false;
       }
     }
     switchToNext() {
@@ -334,61 +412,39 @@
         DebugLogger.debug("AutoPlay", "切换冷却中，跳过");
         return;
       }
-      const container = findElement(SELECTORS.videoList);
-      if (!container) {
-        DebugLogger.debug("AutoPlay", "未找到视频列表容器");
+      const hooks = this.findComponentHooks();
+      if (!hooks) return;
+      const videoList = ((_a = hooks.videoListHook) == null ? void 0 : _a.memoizedState) || [];
+      const currentVideo = (_b = hooks.currentVideoHook) == null ? void 0 : _b.memoizedState;
+      if (!videoList.length || !currentVideo) {
+        DebugLogger.error("AutoPlay", "videoList 或 currentVideo 为空");
         return;
       }
-      const items = Array.from(container.children).filter(
-        (el) => !matchesSelector(el, SELECTORS.noMoreVideo)
-      );
-      DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
-      let currentIdx = items.findIndex((item) => (item.className || "").includes("active-"));
-      if (currentIdx === -1) {
-        const urlLessonId = (_a = window.location.hash.match(/lessonId=(\d+)/)) == null ? void 0 : _a[1];
-        if (urlLessonId) {
-          currentIdx = items.findIndex((item) => {
-            var _a2;
-            const m = (item.className || "").match(/item(\d+)/);
-            return m && urlLessonId.endsWith(m[1]) || m && ((_a2 = m[1]) == null ? void 0 : _a2.endsWith(urlLessonId));
-          });
+      const currentIdx = videoList.findIndex((v) => v.lessonId === currentVideo.lessonId);
+      DebugLogger.debug("AutoPlay", `当前: ${currentVideo.title} (idx=${currentIdx})`);
+      let nextVideo = null;
+      for (let i = currentIdx + 1; i < videoList.length; i++) {
+        if (!videoList[i].finished) {
+          nextVideo = videoList[i];
+          break;
         }
       }
-      if (currentIdx === -1) {
-        DebugLogger.debug("AutoPlay", "未找到当前激活视频");
-        return;
+      if (!nextVideo && currentIdx + 1 < videoList.length) {
+        nextVideo = videoList[currentIdx + 1];
       }
-      DebugLogger.debug("AutoPlay", `当前视频索引: ${currentIdx}`);
-      const nextItem = this.findNextItem(items, currentIdx);
-      if (nextItem) {
-        this.lastSwitchTime = now;
-        const title = ((_b = nextItem.textContent) == null ? void 0 : _b.substring(0, 30)) || "";
-        const match = (nextItem.className || "").match(/item(\d+)/);
-        if (!match) {
-          DebugLogger.debug("AutoPlay", "无法提取 item ID");
-          return;
-        }
-        const itemId = match[1];
-        DebugLogger.log("AutoPlay", `准备切换到: ${title} (itemId=${itemId})`);
-        const url = new URL(window.location.href);
-        url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${itemId}`);
-        window.location.href = url.href;
-        DebugLogger.log("AutoPlay", "已切换");
-      } else {
+      if (!nextVideo && videoList.length > 0) {
+        nextVideo = videoList[0];
+      }
+      if (!nextVideo) {
         DebugLogger.debug("AutoPlay", "没有更多视频");
+        return;
       }
-    }
-    findNextItem(items, currentIndex) {
-      for (let i = currentIndex + 1; i < items.length; i++) {
-        if (!matchesSelector(items[i], SELECTORS.completedVideo)) {
-          return items[i];
-        }
+      this.lastSwitchTime = now;
+      this.videoEndedFired = false;
+      const switched = this.switchVideo(nextVideo);
+      if (switched) {
+        DebugLogger.log("AutoPlay", `已切换到: ${nextVideo.title}`);
       }
-      for (let i = currentIndex + 1; i < items.length; i++) {
-        return items[i];
-      }
-      if (currentIndex > 0) return items[0];
-      return null;
     }
   }
   class AutoSkip {
@@ -579,8 +635,7 @@
     init() {
       this.loadConfig();
       this.createStyles();
-      this.createMenuButton();
-      this.createMenuPanel();
+      this.createUI();
       this.restoreModuleStates();
       this.createGuideOverlay();
       this.autoPlay.setMode(this.state.playMode);
@@ -615,159 +670,403 @@
     createStyles() {
       const style = document.createElement("style");
       style.textContent = `
-      .ewt-helper-container{position:fixed;bottom:20px;right:20px;z-index:99999;font-family:Arial,sans-serif;}
-      .ewt-menu-button{width:50px;height:50px;border-radius:50%;background:#4CAF50;color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 8px rgba(0,0,0,0.2);transition:all .3s;}
-      .ewt-menu-button:hover{background:#45a049;transform:scale(1.05);}
-      .ewt-menu-panel{position:absolute;bottom:60px;right:0;width:280px;background:white;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:15px;display:none;flex-direction:column;gap:10px;}
-      .ewt-menu-panel.open{display:flex;}
-      .ewt-menu-title{font-size:18px;font-weight:bold;color:#333;margin-bottom:10px;text-align:center;padding-bottom:5px;border-bottom:1px solid #eee;}
-      .ewt-toggle-item{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f5;}
-      .ewt-toggle-label{font-size:14px;color:#555;}
-      .ewt-toggle-label.brush-mode{color:#2196F3;font-weight:bold;}
-      .ewt-playmode-group{padding:8px 0;border-bottom:1px solid #f5f5f5;}
-      .ewt-playmode-title{font-size:14px;color:#555;margin-bottom:8px;}
-      .ewt-playmode-buttons{display:flex;gap:8px;}
-      .ewt-playmode-btn{flex:1;padding:6px 0;border-radius:4px;border:1px solid #ddd;background:#fff;color:#555;cursor:pointer;text-align:center;font-size:13px;transition:all .2s;}
-      .ewt-playmode-btn.active{background:#4CAF50;color:white;border-color:#4CAF50;}
-      .ewt-playmode-btn:hover{background:#f5f5f5;}
-      .ewt-playmode-btn.active:hover{background:#45a049;}
-      .ewt-switch{position:relative;display:inline-block;width:40px;height:24px;}
-      .ewt-switch input{opacity:0;width:0;height:0;}
-      .ewt-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;transition:.4s;border-radius:24px;}
-      .ewt-slider:before{position:absolute;content:"";height:16px;width:16px;left:4px;bottom:4px;background:white;transition:.4s;border-radius:50%;}
-      input:checked+.ewt-slider{background:#4CAF50;}
-      input:checked+.ewt-slider:before{transform:translateX(16px);}
-      .ewt-guide-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99998;display:flex;flex-direction:column;justify-content:center;align-items:center;}
-      .ewt-guide-text{color:white;font-size:24px;font-weight:bold;margin-bottom:20px;text-align:center;line-height:1.5;}
-      .ewt-guide-arrow{position:fixed;bottom:80px;right:80px;color:white;font-size:60px;font-weight:bold;animation:ewt-bounce 1.5s infinite;transform:rotate(45deg);}
-      @keyframes ewt-bounce{0%,100%{transform:translate(0,0) rotate(45deg);}50%{transform:translate(15px,15px) rotate(45deg);}}
+      :root {
+        --ewt-primary: #3B82F6;
+        --ewt-primary-hover: #2563EB;
+        --ewt-danger: #EF4444;
+        --ewt-danger-hover: #DC2626;
+        --ewt-bg: #1E1E2E;
+        --ewt-surface: #2A2A3C;
+        --ewt-surface-hover: #333347;
+        --ewt-border: #3A3A4C;
+        --ewt-text: #E4E4E7;
+        --ewt-text-secondary: #A1A1AA;
+        --ewt-radius: 12px;
+        --ewt-radius-sm: 8px;
+      }
+
+      .ewt-fab {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: none;
+        background: var(--ewt-primary);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        transition: all 0.2s ease;
+        font-size: 20px;
+      }
+      .ewt-fab:hover {
+        background: var(--ewt-primary-hover);
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+      }
+      .ewt-fab:active {
+        transform: scale(0.95);
+      }
+      .ewt-fab.active {
+        background: var(--ewt-danger);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      }
+      .ewt-fab.active:hover {
+        background: var(--ewt-danger-hover);
+      }
+
+      .ewt-panel {
+        position: fixed;
+        bottom: 84px;
+        right: 24px;
+        z-index: 99998;
+        width: 260px;
+        background: var(--ewt-bg);
+        border: 1px solid var(--ewt-border);
+        border-radius: var(--ewt-radius);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(8px) scale(0.98);
+        transition: all 0.2s ease;
+        overflow: hidden;
+      }
+      .ewt-panel.open {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+      }
+
+      .ewt-panel-header {
+        padding: 16px 16px 12px;
+        border-bottom: 1px solid var(--ewt-border);
+      }
+      .ewt-panel-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ewt-text);
+        letter-spacing: 0.5px;
+      }
+      .ewt-panel-version {
+        font-size: 11px;
+        color: var(--ewt-text-secondary);
+        margin-top: 2px;
+      }
+
+      .ewt-panel-body {
+        padding: 8px 0;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .ewt-panel-body::-webkit-scrollbar {
+        width: 4px;
+      }
+      .ewt-panel-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .ewt-panel-body::-webkit-scrollbar-thumb {
+        background: var(--ewt-border);
+        border-radius: 2px;
+      }
+
+      .ewt-section {
+        padding: 4px 16px;
+      }
+      .ewt-section + .ewt-section {
+        border-top: 1px solid var(--ewt-border);
+        margin-top: 4px;
+        padding-top: 12px;
+      }
+      .ewt-section-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ewt-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 8px;
+      }
+
+      .ewt-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+      }
+      .ewt-row + .ewt-row {
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .ewt-label {
+        font-size: 13px;
+        color: var(--ewt-text);
+        user-select: none;
+      }
+      .ewt-label.danger {
+        color: var(--ewt-danger);
+      }
+
+      .ewt-toggle {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+      .ewt-toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+      .ewt-toggle-track {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background: var(--ewt-surface);
+        border: 1px solid var(--ewt-border);
+        border-radius: 10px;
+        transition: all 0.2s ease;
+      }
+      .ewt-toggle-track::after {
+        content: '';
+        position: absolute;
+        height: 14px;
+        width: 14px;
+        left: 2px;
+        bottom: 2px;
+        background: var(--ewt-text-secondary);
+        border-radius: 50%;
+        transition: all 0.2s ease;
+      }
+      .ewt-toggle input:checked + .ewt-toggle-track {
+        background: var(--ewt-primary);
+        border-color: var(--ewt-primary);
+      }
+      .ewt-toggle input:checked + .ewt-toggle-track::after {
+        transform: translateX(16px);
+        background: white;
+      }
+
+      .ewt-mode-group {
+        display: flex;
+        gap: 4px;
+        background: var(--ewt-surface);
+        border-radius: var(--ewt-radius-sm);
+        padding: 3px;
+      }
+      .ewt-mode-btn {
+        flex: 1;
+        padding: 6px 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ewt-text-secondary);
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+      }
+      .ewt-mode-btn:hover {
+        color: var(--ewt-text);
+      }
+      .ewt-mode-btn.active {
+        background: var(--ewt-primary);
+        color: white;
+        font-weight: 500;
+      }
+
+      .ewt-brush-btn {
+        width: 100%;
+        padding: 10px;
+        border: 1px dashed var(--ewt-border);
+        border-radius: var(--ewt-radius-sm);
+        background: transparent;
+        color: var(--ewt-text-secondary);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-top: 4px;
+      }
+      .ewt-brush-btn:hover {
+        border-color: var(--ewt-primary);
+        color: var(--ewt-primary);
+        background: rgba(59, 130, 246, 0.05);
+      }
+      .ewt-brush-btn.active {
+        border-style: solid;
+        border-color: var(--ewt-danger);
+        color: var(--ewt-danger);
+        background: rgba(239, 68, 68, 0.05);
+      }
+
+      .ewt-guide {
+        position: fixed;
+        inset: 0;
+        z-index: 99997;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        opacity: 0;
+        animation: ewt-fadeIn 0.3s ease forwards;
+      }
+      .ewt-guide-text {
+        color: white;
+        font-size: 18px;
+        font-weight: 500;
+        text-align: center;
+        line-height: 1.6;
+      }
+      .ewt-guide-hint {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 13px;
+        animation: ewt-pulse 2s ease infinite;
+      }
+      @keyframes ewt-fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes ewt-pulse {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+      }
     `;
       document.head.appendChild(style);
     }
-    createMenuButton() {
-      const oldContainer = document.querySelector(".ewt-helper-container");
-      if (oldContainer) oldContainer.remove();
-      const container = document.createElement("div");
-      container.className = "ewt-helper-container";
-      const btn = document.createElement("button");
-      btn.className = "ewt-menu-button";
-      btn.innerHTML = "📚";
-      btn.onclick = () => this.toggleMenu();
-      container.appendChild(btn);
-      document.body.appendChild(container);
-    }
-    createGuideOverlay() {
-      if (this.state.hasShownGuide) return;
-      const overlay = document.createElement("div");
-      overlay.className = "ewt-guide-overlay";
-      const text = document.createElement("div");
-      text.className = "ewt-guide-text";
-      text.innerHTML = "欢迎使用升学E网通助手！<br>请点击右下角绿色图标打开控制面板";
-      const arrow = document.createElement("div");
-      arrow.className = "ewt-guide-arrow";
-      arrow.textContent = "👉";
-      overlay.appendChild(text);
-      overlay.appendChild(arrow);
-      document.body.appendChild(overlay);
-      this.guideOverlay = overlay;
-    }
-    createMenuPanel() {
-      var _a;
-      const panel = document.createElement("div");
-      panel.className = "ewt-menu-panel";
-      const title = document.createElement("div");
-      title.className = "ewt-menu-title";
-      title.textContent = "升学E网通助手";
-      panel.appendChild(title);
-      panel.appendChild(this.createPlayModeGroup());
-      panel.appendChild(this.createToggleItem("autoSkip", "自动跳题", (v) => this.autoSkip.toggle(v)));
-      panel.appendChild(this.createToggleItem("autoPlay", "自动连播", (v) => this.autoPlay.toggle(v)));
-      panel.appendChild(this.createToggleItem("autoCheckPass", "自动过检", (v) => this.autoCheckPass.toggle(v)));
-      panel.appendChild(this.createToggleItem("speedControl", "2倍速播放", (v) => this.speedControl.toggle(v)));
-      panel.appendChild(this.createToggleItem("lockProgress", "锁定进度条", (v) => this.progressLock.toggle(v)));
-      panel.appendChild(this.createToggleItem("courseBrushMode", "刷课模式", (v) => {
-        v ? this.enableCourseBrushMode() : this.disableCourseBrushMode();
-      }, true));
-      (_a = document.querySelector(".ewt-helper-container")) == null ? void 0 : _a.appendChild(panel);
-    }
-    createPlayModeGroup() {
-      const group = document.createElement("div");
-      group.className = "ewt-playmode-group";
-      const title = document.createElement("div");
-      title.className = "ewt-playmode-title";
-      title.textContent = "连播模式选择";
-      group.appendChild(title);
-      const buttons = document.createElement("div");
-      buttons.className = "ewt-playmode-buttons";
-      const btn85 = document.createElement("button");
-      btn85.className = `ewt-playmode-btn ${this.state.playMode === PlayMode.PROGRESS_85 ? "active" : ""}`;
-      btn85.textContent = "85%进度连播";
-      btn85.onclick = () => {
-        this.state.playMode = PlayMode.PROGRESS_85;
-        this.autoPlay.setMode(PlayMode.PROGRESS_85);
-        this.updatePlayModeButtons();
-        this.saveConfig();
-      };
-      const btnFull = document.createElement("button");
-      btnFull.className = `ewt-playmode-btn ${this.state.playMode === PlayMode.FULL_PLAY ? "active" : ""}`;
-      btnFull.textContent = "看完后连播";
-      btnFull.onclick = () => {
-        this.state.playMode = PlayMode.FULL_PLAY;
-        this.autoPlay.setMode(PlayMode.FULL_PLAY);
-        this.updatePlayModeButtons();
-        this.saveConfig();
-      };
-      buttons.appendChild(btn85);
-      buttons.appendChild(btnFull);
-      group.appendChild(buttons);
-      return group;
-    }
-    updatePlayModeButtons() {
+    createUI() {
       var _a, _b;
-      const btns = document.querySelectorAll(".ewt-playmode-btn");
-      btns.forEach((b) => b.classList.remove("active"));
-      if (this.state.playMode === PlayMode.PROGRESS_85) {
-        (_a = btns[0]) == null ? void 0 : _a.classList.add("active");
-      } else {
-        (_b = btns[1]) == null ? void 0 : _b.classList.add("active");
-      }
+      (_a = document.querySelector(".ewt-fab")) == null ? void 0 : _a.remove();
+      (_b = document.querySelector(".ewt-panel")) == null ? void 0 : _b.remove();
+      const fab = document.createElement("button");
+      fab.className = "ewt-fab";
+      fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
+      fab.onclick = () => this.toggleMenu();
+      const panel = document.createElement("div");
+      panel.className = "ewt-panel";
+      panel.innerHTML = `
+      <div class="ewt-panel-header">
+        <div class="ewt-panel-title">EWT360 Helper</div>
+        <div class="ewt-panel-version">v3.0.1 · React Fiber</div>
+      </div>
+      <div class="ewt-panel-body">
+        <div class="ewt-section">
+          <div class="ewt-section-label">连播模式</div>
+          <div class="ewt-mode-group" id="ewt-mode-group">
+            <button class="ewt-mode-btn ${this.state.playMode === PlayMode.PROGRESS_85 ? "active" : ""}" data-mode="progress85">85% 连播</button>
+            <button class="ewt-mode-btn ${this.state.playMode === PlayMode.FULL_PLAY ? "active" : ""}" data-mode="fullPlay">看完连播</button>
+          </div>
+        </div>
+        <div class="ewt-section">
+          <div class="ewt-section-label">自动化</div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动连播</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoPlay" ${this.state.autoPlay ? "checked" : ""}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动跳题</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoSkip" ${this.state.autoSkip ? "checked" : ""}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">自动过检</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-autoCheckPass" ${this.state.autoCheckPass ? "checked" : ""}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">2x 倍速</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-speedControl" ${this.state.speedControl ? "checked" : ""}><span class="ewt-toggle-track"></span></label>
+          </div>
+          <div class="ewt-row">
+            <span class="ewt-label">锁定进度</span>
+            <label class="ewt-toggle"><input type="checkbox" id="ewt-lockProgress" ${this.state.lockProgress ? "checked" : ""}><span class="ewt-toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="ewt-section">
+          <button class="ewt-brush-btn ${this.state.courseBrushMode ? "active" : ""}" id="ewt-brush">
+            ${this.state.courseBrushMode ? "退出刷课模式" : "一键刷课"}
+          </button>
+        </div>
+      </div>
+    `;
+      document.body.appendChild(fab);
+      document.body.appendChild(panel);
+      this.bindEvents();
     }
-    createToggleItem(id, label, onChange, isBrush = false) {
-      const item = document.createElement("div");
-      item.className = "ewt-toggle-item";
-      const lab = document.createElement("label");
-      lab.className = `ewt-toggle-label ${isBrush ? "brush-mode" : ""}`;
-      lab.textContent = label;
-      const sw = document.createElement("label");
-      sw.className = "ewt-switch";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.id = `ewt-toggle-${id}`;
-      input.checked = this.state[id];
-      const slider = document.createElement("span");
-      slider.className = "ewt-slider";
-      sw.appendChild(input);
-      sw.appendChild(slider);
-      item.appendChild(lab);
-      item.appendChild(sw);
-      input.onchange = (e) => {
-        const target = e.target;
-        this.state[id] = target.checked;
-        this.saveConfig();
-        onChange(target.checked);
-      };
-      return item;
+    bindEvents() {
+      document.querySelectorAll("#ewt-mode-group .ewt-mode-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const mode = btn.dataset.mode;
+          this.state.playMode = mode;
+          this.autoPlay.setMode(mode);
+          document.querySelectorAll("#ewt-mode-group .ewt-mode-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          this.saveConfig();
+        });
+      });
+      const toggles = [
+        { id: "ewt-autoPlay", key: "autoPlay", handler: (v) => this.autoPlay.toggle(v) },
+        { id: "ewt-autoSkip", key: "autoSkip", handler: (v) => this.autoSkip.toggle(v) },
+        { id: "ewt-autoCheckPass", key: "autoCheckPass", handler: (v) => this.autoCheckPass.toggle(v) },
+        { id: "ewt-speedControl", key: "speedControl", handler: (v) => this.speedControl.toggle(v) },
+        { id: "ewt-lockProgress", key: "lockProgress", handler: (v) => this.progressLock.toggle(v) }
+      ];
+      toggles.forEach(({ id, key, handler }) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener("change", () => {
+            this.state[key] = el.checked;
+            this.saveConfig();
+            handler(el.checked);
+          });
+        }
+      });
+      const brushBtn = document.getElementById("ewt-brush");
+      if (brushBtn) {
+        brushBtn.addEventListener("click", () => {
+          const newState = !this.state.courseBrushMode;
+          this.state.courseBrushMode = newState;
+          this.saveConfig();
+          newState ? this.enableCourseBrushMode() : this.disableCourseBrushMode();
+        });
+      }
     }
     toggleMenu() {
       this.isMenuOpen = !this.isMenuOpen;
-      const panel = document.querySelector(".ewt-menu-panel");
+      const panel = document.querySelector(".ewt-panel");
+      const fab = document.querySelector(".ewt-fab");
       this.isMenuOpen ? panel == null ? void 0 : panel.classList.add("open") : panel == null ? void 0 : panel.classList.remove("open");
+      this.isMenuOpen ? fab == null ? void 0 : fab.classList.add("active") : fab == null ? void 0 : fab.classList.remove("active");
       if (this.isMenuOpen && this.guideOverlay) {
         this.guideOverlay.remove();
         this.guideOverlay = null;
         this.state.hasShownGuide = true;
         this.saveConfig();
       }
+    }
+    createGuideOverlay() {
+      if (this.state.hasShownGuide) return;
+      const overlay = document.createElement("div");
+      overlay.className = "ewt-guide";
+      overlay.innerHTML = `
+      <div class="ewt-guide-text">
+        欢迎使用 EWT360 Helper<br>
+        <span style="font-size:14px;font-weight:400;opacity:0.7">点击右下角按钮打开控制面板</span>
+      </div>
+      <div class="ewt-guide-hint">点击任意处关闭</div>
+    `;
+      overlay.addEventListener("click", () => {
+        overlay.remove();
+        this.guideOverlay = null;
+        this.state.hasShownGuide = true;
+        this.saveConfig();
+      });
+      document.body.appendChild(overlay);
+      this.guideOverlay = overlay;
     }
     enableCourseBrushMode() {
       this.setToggleState("autoSkip", true);
@@ -780,6 +1079,7 @@
       this.autoCheckPass.toggle(true);
       this.speedControl.toggle(true);
       this.progressLock.toggle(true);
+      this.updateBrushButton(true);
       DebugLogger.log("GUI", "刷课模式已开启");
     }
     disableCourseBrushMode() {
@@ -793,13 +1093,21 @@
       this.autoCheckPass.toggle(false);
       this.speedControl.toggle(false);
       this.progressLock.toggle(false);
+      this.updateBrushButton(false);
       DebugLogger.log("GUI", "刷课模式已关闭");
     }
     setToggleState(id, checked) {
       this.state[id] = checked;
       this.saveConfig();
-      const el = document.getElementById(`ewt-toggle-${id}`);
+      const el = document.getElementById(`ewt-${id}`);
       if (el) el.checked = checked;
+    }
+    updateBrushButton(active) {
+      const btn = document.getElementById("ewt-brush");
+      if (btn) {
+        btn.classList.toggle("active", active);
+        btn.textContent = active ? "退出刷课模式" : "一键刷课";
+      }
     }
   }
   const autoPlay = new AutoPlay();
