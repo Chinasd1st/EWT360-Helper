@@ -20,7 +20,7 @@ function formatMessage(module: string, message: string): string {
 }
 
 export const DebugLogger: Logger = {
-  enabled: false,
+  enabled: true,
 
   log(module: string, message: string, data?: unknown) {
     if (!this.enabled) return;

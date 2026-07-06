@@ -22,13 +22,16 @@ const DEFAULT_CONFIG: AutoPlayConfig = {
 
 export class AutoPlay {
   private intervalId: number | null = null;
+  private observer: MutationObserver | null = null;
   private videoEndedHandler: (() => void) | null = null;
   private config: AutoPlayConfig;
   private currentMode: PlayMode = PlayMode.PROGRESS_85;
-  private lastSwitchedVideo: HTMLElement | null = null;
+  private lastSwitchTime: number = 0;
+  private boundSwitchToNext: () => void;
 
   constructor(config: Partial<AutoPlayConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.boundSwitchToNext = this.switchToNext.bind(this);
   }
 
   toggle(isEnabled: boolean): void {
@@ -41,11 +44,14 @@ export class AutoPlay {
       return;
     }
 
-    // Listen for video ended event
-    this.attachVideoEndedListener();
+    // Watch for video element creation via MutationObserver
+    this.startObserver();
 
-    // Also use interval as fallback
-    this.intervalId = window.setInterval(() => this.checkAndSwitch(), this.config.checkInterval);
+    // Also try to attach immediately
+    this.tryAttachVideoListener();
+
+    // Use interval as fallback for progress check
+    this.intervalId = window.setInterval(() => this.checkProgress(), this.config.checkInterval);
     DebugLogger.log('AutoPlay', '自动连播已开启');
   }
 
@@ -54,7 +60,8 @@ export class AutoPlay {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    this.detachVideoEndedListener();
+    this.stopObserver();
+    this.detachVideoListener();
     DebugLogger.log('AutoPlay', '自动连播已关闭');
   }
 
@@ -66,97 +73,113 @@ export class AutoPlay {
     DebugLogger.log('AutoPlay', `连播模式已切换：${mode === PlayMode.PROGRESS_85 ? '85%进度' : '看完后'}`);
   }
 
-  private attachVideoEndedListener(): void {
-    const video = document.querySelector(SELECTORS.video) as HTMLVideoElement | null;
+  private startObserver(): void {
+    this.stopObserver();
+
+    this.observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const el = node as HTMLElement;
+              // Check if added node is a video or contains a video
+              if (el.tagName === 'VIDEO' || el.querySelector('video')) {
+                DebugLogger.debug('AutoPlay', '检测到 video 元素添加');
+                this.tryAttachVideoListener();
+              }
+            }
+          }
+        }
+      }
+    });
+
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    DebugLogger.debug('AutoPlay', 'MutationObserver 已启动');
+  }
+
+  private stopObserver(): void {
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+  }
+
+  private tryAttachVideoListener(): void {
+    const video = document.querySelector('video') as HTMLVideoElement | null;
     if (!video) return;
 
-    // Remove old listener if exists
-    this.detachVideoEndedListener();
+    // Check if already attached
+    if (this.videoEndedHandler && (video as any).__ewtAttached) return;
 
-    // Add new listener
+    this.detachVideoListener();
+
     this.videoEndedHandler = () => {
-      DebugLogger.log('AutoPlay', '视频播放结束，准备切换下一个');
+      DebugLogger.log('AutoPlay', '视频 ended 事件触发');
       this.switchToNext();
     };
+
     video.addEventListener('ended', this.videoEndedHandler);
+    (video as any).__ewtAttached = true;
     DebugLogger.debug('AutoPlay', '已绑定 video ended 事件');
   }
 
-  private detachVideoEndedListener(): void {
-    if (this.videoEndedHandler) {
-      const video = document.querySelector(SELECTORS.video) as HTMLVideoElement | null;
-      if (video) {
-        video.removeEventListener('ended', this.videoEndedHandler);
-      }
-      this.videoEndedHandler = null;
+  private detachVideoListener(): void {
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    if (video && this.videoEndedHandler) {
+      video.removeEventListener('ended', this.videoEndedHandler);
+      (video as any).__ewtAttached = false;
     }
+    this.videoEndedHandler = null;
   }
 
-  private checkAndSwitch(): void {
+  private checkProgress(): void {
     try {
-      const video = document.querySelector(SELECTORS.video) as HTMLVideoElement | null;
-      if (!video) {
-        DebugLogger.debug('AutoPlay', '未找到 video 元素');
-        return;
-      }
+      const video = document.querySelector('video') as HTMLVideoElement | null;
+      if (!video) return;
 
-      // Re-attach listener if video element changed (e.g., after switching videos)
-      if (!this.videoEndedHandler) {
-        this.attachVideoEndedListener();
-      }
+      // Re-attach if needed
+      this.tryAttachVideoListener();
 
-      const activeVideo = this.findActiveVideo();
-      if (!activeVideo) {
-        DebugLogger.debug('AutoPlay', '未找到当前激活的视频项');
-        return;
-      }
+      if (this.currentMode !== PlayMode.PROGRESS_85) return;
 
-      // Only check progress in PROGRESS_85 mode
-      if (this.currentMode === PlayMode.PROGRESS_85) {
-        const canPlayNext = this.checkProgress(video);
-        if (canPlayNext) {
-          this.switchToNext();
-        }
+      const current = video.currentTime;
+      const total = video.duration;
+      if (isNaN(total) || total <= 0) return;
+
+      const progress = current / total;
+      DebugLogger.debug('AutoPlay', `进度: ${(progress * 100).toFixed(1)}%`);
+
+      if (progress >= this.config.progressThreshold) {
+        this.switchToNext();
       }
     } catch (error) {
-      DebugLogger.error('AutoPlay', '自动连播出错', error);
+      DebugLogger.error('AutoPlay', '检查进度出错', error);
     }
-  }
-
-  private checkProgress(video: HTMLVideoElement): boolean {
-    const current = video.currentTime;
-    const total = video.duration;
-    if (isNaN(total) || total <= 0) {
-      return false;
-    }
-    const progress = current / total;
-    const canPlay = progress >= this.config.progressThreshold;
-    DebugLogger.debug('AutoPlay', `进度: ${(progress * 100).toFixed(1)}% (${canPlay ? '达到' : '未达到'} ${this.config.progressThreshold * 100}%)`);
-    return canPlay;
   }
 
   private switchToNext(): void {
+    // Debounce: prevent rapid switching
+    const now = Date.now();
+    if (now - this.lastSwitchTime < 3000) {
+      DebugLogger.debug('AutoPlay', '切换冷却中，跳过');
+      return;
+    }
+
     const activeVideo = this.findActiveVideo();
     if (!activeVideo) {
       DebugLogger.debug('AutoPlay', '未找到当前激活的视频项');
       return;
     }
 
-    // Don't switch if we just switched to this video
-    if (activeVideo === this.lastSwitchedVideo) {
-      DebugLogger.debug('AutoPlay', '刚刚已切换过此视频，跳过');
-      return;
-    }
-
     const nextVideo = this.findNextVideo(activeVideo);
     if (nextVideo) {
-      this.lastSwitchedVideo = nextVideo;
+      this.lastSwitchTime = now;
       DebugLogger.log('AutoPlay', '找到下一个视频，准备切换');
       nextVideo.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       DebugLogger.log('AutoPlay', '已自动切换下一个视频');
-
-      // Re-attach listener after switch (new video element will be created)
-      setTimeout(() => this.attachVideoEndedListener(), 1000);
     } else {
       DebugLogger.debug('AutoPlay', '没有更多视频');
     }
