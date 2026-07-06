@@ -1,15 +1,14 @@
-name: Build and Release
+name: Build and Deploy
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
     branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout
@@ -30,17 +29,28 @@ jobs:
       - name: Build
         run: npm run build:prod
 
-      - name: Deploy to dist branch
+      - name: Deploy to output branch
         if: github.ref == 'refs/heads/main'
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Save the built file
           cp dist/main.user.js /tmp/main.user.js
-          git fetch origin dist || true
-          git checkout dist || git checkout --orphan dist
+          
+          # Try to checkout output branch, create if doesn't exist
+          git fetch origin output 2>/dev/null || true
+          if git rev-parse --verify origin/output >/dev/null 2>&1; then
+            git checkout output
+          else
+            git checkout --orphan output
+            git rm -rf --cached . 2>/dev/null || true
+            git clean -fd 2>/dev/null || true
+          fi
+          
+          # Clean and add only the build file
+          find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} + 2>/dev/null || true
           cp /tmp/main.user.js .
-          git add main.user.js
-          git diff --cached --quiet || git commit -m "build: update main.user.js from ${{ github.sha }}"
-          git push origin dist
-
-
+          git add -A
+          git diff --cached --quiet || git commit -m "build: ${{ github.sha }}"
+          git push origin output
