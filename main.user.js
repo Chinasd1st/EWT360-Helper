@@ -75,39 +75,49 @@
      */
     videoList: {
       semantic: [],
-      structural: [
-        ".task-list-container-PwS3c",
-        ".play_video_main_content_box"
-      ],
+      structural: [],
       cssModule: [
-        '[class*="task-list-container"]',
-        '[class*="task-list"]'
+        '[class*="listCon-"]'
       ]
     },
     /**
-     * 视频项 - 使用 li 元素
+     * 视频项
      */
     videoItem: {
       semantic: [],
       structural: [],
-      cssModule: []
+      cssModule: [
+        '[class*="item-"][class*="item"]'
+      ]
     },
     /**
-     * 当前激活的视频项 - 没有"已完成"的项
+     * 当前激活的视频项
      */
     activeVideo: {
       semantic: [],
       structural: [],
-      cssModule: []
+      cssModule: [
+        '[class*="active-"]'
+      ]
     },
     /**
-     * 已完成的视频项 - 包含"已完成"文本或 check 图标
+     * 已完成的视频项
      */
     completedVideo: {
       semantic: [],
       structural: [],
       cssModule: [],
       text: ["已完成"]
+    },
+    /**
+     * 没有更多视频的提示
+     */
+    noMoreVideo: {
+      semantic: [],
+      structural: [],
+      cssModule: [
+        '[class*="noMore-"]'
+      ]
     },
     /**
      * 通过检查按钮
@@ -200,6 +210,24 @@
     }
     return null;
   }
+  function matchesSelector(element, config) {
+    var _a;
+    if (!element) return false;
+    for (const selector of config.semantic) {
+      if (element.matches(selector)) return true;
+    }
+    for (const selector of config.structural) {
+      if (element.matches(selector)) return true;
+    }
+    for (const selector of config.cssModule) {
+      if (element.matches(selector)) return true;
+    }
+    if (config.text) {
+      const text = ((_a = element.textContent) == null ? void 0 : _a.trim()) || "";
+      if (config.text.some((t) => text.includes(t))) return true;
+    }
+    return false;
+  }
   function validateSelectors() {
     const results = {};
     for (const [name, config] of Object.entries(SELECTORS)) {
@@ -225,7 +253,6 @@
       this.currentMode = "progress85";
       this.lastSwitchTime = 0;
       this.config = { ...DEFAULT_CONFIG, ...config };
-      this.boundSwitchToNext = this.switchToNext.bind(this);
     }
     toggle(isEnabled) {
       isEnabled ? this.start() : this.stop();
@@ -251,29 +278,11 @@
     }
     setMode(mode) {
       this.currentMode = mode;
-      if (mode === "progress85") {
-        this.config.progressThreshold = 0.85;
-      }
       DebugLogger.log("AutoPlay", `连播模式已切换：${mode === "progress85" ? "85%进度" : "看完后"}`);
     }
     startObserver() {
       this.stopObserver();
-      this.observer = new MutationObserver((mutations) => {
-        var _a;
-        for (const mutation of mutations) {
-          if (mutation.type === "childList") {
-            for (const node of mutation.addedNodes) {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                const el = node;
-                if (el.tagName === "VIDEO" || ((_a = el.querySelector) == null ? void 0 : _a.call(el, "video"))) {
-                  DebugLogger.debug("AutoPlay", "检测到 video 元素添加");
-                  this.tryAttachVideoListener();
-                }
-              }
-            }
-          }
-        }
-      });
+      this.observer = new MutationObserver(() => this.tryAttachVideoListener());
       this.observer.observe(document.body, { childList: true, subtree: true });
     }
     stopObserver() {
@@ -289,11 +298,10 @@
       this.detachVideoListener();
       this.videoEndedHandler = () => {
         DebugLogger.log("AutoPlay", "视频 ended 事件触发");
-        this.switchToNext();
+        setTimeout(() => this.switchToNext(), 500);
       };
       video.addEventListener("ended", this.videoEndedHandler);
       video.__ewtAttached = true;
-      DebugLogger.debug("AutoPlay", "已绑定 video ended 事件");
     }
     detachVideoListener() {
       const video = findElement(SELECTORS.video);
@@ -309,11 +317,9 @@
         if (!video) return;
         this.tryAttachVideoListener();
         if (this.currentMode !== "progress85") return;
-        const current = video.currentTime;
-        const total = video.duration;
-        if (isNaN(total) || total <= 0) return;
-        const progress = current / total;
-        DebugLogger.debug("AutoPlay", `进度: ${(progress * 100).toFixed(1)}%`);
+        const { currentTime, duration } = video;
+        if (isNaN(duration) || duration <= 0) return;
+        const progress = currentTime / duration;
         if (progress >= this.config.progressThreshold) {
           this.switchToNext();
         }
@@ -328,77 +334,43 @@
         DebugLogger.debug("AutoPlay", "切换冷却中，跳过");
         return;
       }
-      const videoList = this.findVideoList();
-      if (!videoList) {
-        DebugLogger.debug("AutoPlay", "未找到视频列表");
+      const container = findElement(SELECTORS.videoList);
+      if (!container) {
+        DebugLogger.debug("AutoPlay", "未找到视频列表容器");
         return;
       }
-      const items = this.getVideoItems(videoList);
+      const items = Array.from(container.children).filter(
+        (el) => !matchesSelector(el, SELECTORS.noMoreVideo)
+      );
       DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
-      const currentIdx = this.findCurrentVideoIndex(items);
+      const currentIdx = items.findIndex((item) => matchesSelector(item, SELECTORS.activeVideo));
       if (currentIdx === -1) {
-        DebugLogger.debug("AutoPlay", "未找到当前视频");
+        DebugLogger.debug("AutoPlay", "未找到当前激活视频");
         return;
       }
       DebugLogger.debug("AutoPlay", `当前视频索引: ${currentIdx}`);
-      const nextItem = this.findNextVideoItem(items, currentIdx);
+      const nextItem = this.findNextItem(items, currentIdx);
       if (nextItem) {
         this.lastSwitchTime = now;
         const title = ((_a = nextItem.textContent) == null ? void 0 : _a.substring(0, 30)) || "";
         DebugLogger.log("AutoPlay", `准备切换到: ${title}`);
-        this.clickVideoItem(nextItem);
+        nextItem.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
         DebugLogger.log("AutoPlay", "已自动切换下一个视频");
       } else {
         DebugLogger.debug("AutoPlay", "没有更多视频");
       }
     }
-    findVideoList() {
-      const container = findElement(SELECTORS.videoList);
-      if (container) return container;
-      const lists = document.querySelectorAll("ul, ol");
-      for (const list of lists) {
-        const items = list.querySelectorAll("li");
-        if (items.length > 5) {
-          return list;
-        }
-      }
-      return null;
-    }
-    getVideoItems(container) {
-      const items = container.querySelectorAll("li");
-      return Array.from(items);
-    }
-    findCurrentVideoIndex(items) {
-      for (let i = 0; i < items.length; i++) {
-        if (this.isCurrentVideo(items[i])) {
-          return i;
-        }
-      }
-      return -1;
-    }
-    isCurrentVideo(item) {
-      const text = item.textContent || "";
-      return !text.includes("已完成") && !text.includes("没有更多");
-    }
-    findNextVideoItem(items, currentIndex) {
+    findNextItem(items, currentIndex) {
       for (let i = currentIndex + 1; i < items.length; i++) {
-        const item = items[i];
-        const text = item.textContent || "";
-        if (text.includes("没有更多")) continue;
-        return item;
+        if (!matchesSelector(items[i], SELECTORS.completedVideo)) {
+          return items[i];
+        }
       }
-      if (currentIndex > 0) {
-        return items[0];
+      for (let i = currentIndex + 1; i < items.length; i++) {
+        return items[i];
       }
+      if (currentIndex > 0) return items[0];
       return null;
-    }
-    clickVideoItem(item) {
-      const titleEl = item.querySelector('[class*="title"], [class*="name"], a, span');
-      const clickTarget = titleEl || item;
-      DebugLogger.debug("AutoPlay", `点击元素: ${clickTarget.tagName} ${clickTarget.className}`);
-      clickTarget.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-      );
     }
   }
   class AutoSkip {
