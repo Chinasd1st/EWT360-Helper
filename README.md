@@ -1,6 +1,6 @@
 # EWT360 Helper (Fork 分发版)
 
-> 本仓库是 [Chinasd1st/EWT360-Helper](https://github.com/Chinasd1st/EWT360-Helper) 的 fork 分发版本，在原版基础上增加了 TypeScript 模块化架构和 React Fiber 自动连播等功能。
+> 本仓库是 [ZNink/EWT360-Helper](https://github.com/ZNink/EWT360-Helper) 的 fork，在原版基础上增加了 TypeScript 模块化架构和 React Fiber 自动连播等功能。
 
 ![ima](/image/ewt_image.png)
 
@@ -16,7 +16,7 @@
 
 ## 分发说明
 
-本仓库为原版 EWT360-Helper 的 **fork 分发版本**，`output` 分支为构建产物分发版本，由 GitHub Actions 自动构建并部署。
+本仓库为 [ZNink/EWT360-Helper](https://github.com/ZNink/EWT360-Helper) 的 **fork 版本**，`output` 分支为构建产物分发版本，由 GitHub Actions 自动构建并部署。
 
 - **安装方式**：通过 Tampermonkey 安装 `output` 分支的 `main.user.js`
 - **源码**：`main` 分支，基于 TypeScript + Vite 构建
