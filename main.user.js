@@ -74,32 +74,54 @@ const ElementFinder = {
      */
     findVideoPlayer() {
         return document.querySelector('[role="region"][aria-label="视频播放器"]') ||
-               document.querySelector('.video-player') ||
-               document.querySelector('[class*="player"]');
+               document.querySelector('.play_video_main_box') ||
+               document.querySelector('[class*="player-wrapper"]') ||
+               document.querySelector('[class*="player-"]');
     },
 
     /**
      * 查找视频列表容器
      */
     findVideoListContainer() {
-        return document.querySelector('[class*="list"]') ||
-               document.querySelector('[class*="task"]') ||
-               document.querySelector('[class*="course"]');
+        return document.querySelector('.task-list-container-PwS3c') ||
+               document.querySelector('[class*="task-list-container"]') ||
+               document.querySelector('[class*="videos-"]') ||
+               document.querySelector('[class*="video-list"]');
     },
 
     /**
      * 查找当前激活的视频项
      */
     findActiveVideoItem() {
-        const items = document.querySelectorAll('[class*="item"], [class*="video"], [class*="task"]');
+        // 优先查找 CSS module 的 actived 类名
+        const activeByClass = document.querySelector('[class*="actived-"]');
+        if (activeByClass) return activeByClass;
+
+        // 查找视频列表中的项
+        const container = this.findVideoListContainer();
+        if (!container) return null;
+
+        const items = container.querySelectorAll('[class*="video-item-"], [class*="video-"]');
         for (const item of items) {
-            if (item.classList.toString().includes('active') ||
-                item.classList.toString().includes('current') ||
-                item.classList.toString().includes('selected') ||
-                item.getAttribute('aria-current') === 'true') {
+            const classes = item.className.toString();
+            if (classes.includes('actived') ||
+                classes.includes('active') ||
+                classes.includes('current') ||
+                classes.includes('selected')) {
                 return item;
             }
         }
+
+        // 回退：查找高亮背景的元素
+        for (const item of items) {
+            const style = window.getComputedStyle(item);
+            if (style.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+                style.backgroundColor !== 'transparent' &&
+                style.backgroundColor !== 'rgb(255, 255, 255)') {
+                return item;
+            }
+        }
+
         return null;
     },
 
@@ -109,7 +131,16 @@ const ElementFinder = {
     findAllVideoItems() {
         const container = this.findVideoListContainer();
         if (!container) return [];
-        return Array.from(container.querySelectorAll('[class*="item"], [class*="video"], [class*="task"]'));
+
+        // 优先使用 CSS module 选择器
+        let items = container.querySelectorAll('[class*="video-item-"]');
+        if (items.length === 0) {
+            items = container.querySelectorAll('[class*="video-"]');
+        }
+        if (items.length === 0) {
+            items = container.querySelectorAll('[class*="lesson-item"], [class*="task-item"]');
+        }
+        return Array.from(items);
     },
 
     /**
@@ -119,10 +150,16 @@ const ElementFinder = {
         if (!item) return false;
         const text = item.textContent || '';
         const html = item.innerHTML || '';
+        const classes = item.className.toString();
+
         return text.includes('已完成') ||
-               html.includes('check') ||
-               item.querySelector('[class*="complete"]') !== null ||
-               item.querySelector('[class*="finished"]') !== null ||
+               classes.includes('success') ||
+               classes.includes('completed') ||
+               classes.includes('finished') ||
+               html.includes('icon-ewt-checked-right') ||
+               html.includes('icon-ewt-right-tick') ||
+               item.querySelector('[class*="success-"]') !== null ||
+               item.querySelector('[class*="check-icon"]') !== null ||
                item.querySelector('img[alt="check"]') !== null;
     },
 
@@ -275,19 +312,28 @@ const AutoPlay = {
     checkAndSwitch() {
         try {
             const video = ElementFinder.findVideoElement();
-            if (!video) return;
+            if (!video) {
+                DebugLogger.debug('AutoPlay', '未找到 video 元素');
+                return;
+            }
 
             const activeVideo = ElementFinder.findActiveVideoItem();
-            if (!activeVideo) return;
+            if (!activeVideo) {
+                DebugLogger.debug('AutoPlay', '未找到当前激活的视频项');
+                return;
+            }
 
             let canPlayNext = false;
 
             if (this.currentMode === Config.playMode.PROGRESS_85) {
                 const current = video.currentTime;
                 const total = video.duration;
-                if (isNaN(total) || total <= 0) return;
+                if (isNaN(total) || total <= 0) {
+                    DebugLogger.debug('AutoPlay', `视频时长无效: ${total}`);
+                    return;
+                }
                 canPlayNext = current / total >= this.progressThreshold;
-                DebugLogger.debug('AutoPlay', `进度: ${(current / total * 100).toFixed(1)}%`);
+                DebugLogger.debug('AutoPlay', `进度: ${(current / total * 100).toFixed(1)}% (${canPlayNext ? '达到' : '未达到'} ${this.progressThreshold * 100}%)`);
             } else {
                 const img = document.querySelector('img[src*="1820894120067424424"]');
                 canPlayNext = !!img;
@@ -298,8 +344,11 @@ const AutoPlay = {
 
             const nextVideo = ElementFinder.findNextUnfinishedVideo(activeVideo);
             if (nextVideo) {
+                DebugLogger.log('AutoPlay', `找到下一个未完成视频，准备切换`);
                 nextVideo.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                 DebugLogger.log('AutoPlay', '已自动切换下一个视频');
+            } else {
+                DebugLogger.debug('AutoPlay', '没有更多未完成的视频');
             }
         } catch (error) {
             DebugLogger.error('AutoPlay', '自动连播出错', error);
