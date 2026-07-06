@@ -1,12 +1,12 @@
 /**
  * 自动连播模块
  * 
- * 通过 React Fiber 树遍历直接操作 React 内部 useState 的 dispatch 函数来切换视频。
- * 已验证：sidebar item fiber → 向上 14 层 → 找到含 videoList + currentVideo 的 hooks → dispatch 切换。
+ * 通过 React Fiber dispatch 直接操作状态切换视频。
+ * 双重触发机制：ended 事件 + checkProgress 轮询检测 video.ended
  */
 
 import { DebugLogger } from '../utils/DebugLogger';
-import { SELECTORS, findElement, matchesSelector } from '../selectors';
+import { SELECTORS, findElement } from '../selectors';
 
 export enum PlayMode {
   PROGRESS_85 = 'progress85',
@@ -25,17 +25,8 @@ const DEFAULT_CONFIG: AutoPlayConfig = {
 
 interface HookState {
   memoizedState: any;
-  queue?: {
-    dispatch?: (value: any) => void;
-    last?: any;
-  };
+  queue?: { dispatch?: (value: any) => void };
   next?: HookState;
-}
-
-interface ComponentHooks {
-  fiber: any;
-  videoListHook: HookState | null;
-  currentVideoHook: HookState | null;
 }
 
 export class AutoPlay {
@@ -45,7 +36,7 @@ export class AutoPlay {
   private config: AutoPlayConfig;
   private currentMode: PlayMode = PlayMode.PROGRESS_85;
   private lastSwitchTime: number = 0;
-  private cachedHooks: ComponentHooks | null = null;
+  private videoEndedFired: boolean = false;
 
   constructor(config: Partial<AutoPlayConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -83,7 +74,9 @@ export class AutoPlay {
 
   private startObserver(): void {
     this.stopObserver();
-    this.observer = new MutationObserver(() => this.tryAttachVideoListener());
+    this.observer = new MutationObserver(() => {
+      this.tryAttachVideoListener();
+    });
     this.observer.observe(document.body, { childList: true, subtree: true });
   }
 
@@ -101,11 +94,14 @@ export class AutoPlay {
 
     this.detachVideoListener();
     this.videoEndedHandler = () => {
+      if (this.videoEndedFired) return;
+      this.videoEndedFired = true;
       DebugLogger.log('AutoPlay', '视频 ended 事件触发');
       setTimeout(() => this.switchToNext(), 500);
     };
     video.addEventListener('ended', this.videoEndedHandler);
     (video as any).__ewtAttached = true;
+    DebugLogger.debug('AutoPlay', '已绑定 ended 事件');
   }
 
   private detachVideoListener(): void {
@@ -123,14 +119,27 @@ export class AutoPlay {
       if (!video) return;
       this.tryAttachVideoListener();
 
-      if (this.currentMode !== PlayMode.PROGRESS_85) return;
-
-      const { currentTime, duration } = video;
+      const { currentTime, duration, ended } = video;
       if (isNaN(duration) || duration <= 0) return;
 
-      const progress = currentTime / duration;
-      if (progress >= this.config.progressThreshold) {
-        this.switchToNext();
+      // 机制1：视频已结束（ended 事件可能未触发，这里兜底）
+      if (ended && !this.videoEndedFired) {
+        this.videoEndedFired = true;
+        DebugLogger.log('AutoPlay', 'checkProgress 检测到 video.ended');
+        setTimeout(() => this.switchToNext(), 500);
+        return;
+      }
+
+      // 机制2：进度阈值检测
+      if (this.currentMode === PlayMode.PROGRESS_85) {
+        const progress = currentTime / duration;
+        if (progress >= this.config.progressThreshold) {
+          if (!this.videoEndedFired) {
+            this.videoEndedFired = true;
+            DebugLogger.log('AutoPlay', `checkProgress 达到阈值 ${Math.round(progress * 100)}%`);
+            this.switchToNext();
+          }
+        }
       }
     } catch (error) {
       DebugLogger.error('AutoPlay', '检查进度出错', error);
@@ -148,23 +157,18 @@ export class AutoPlay {
   }
 
   /**
-   * 从 sidebar item 出发，找到管理视频列表的 React 组件的 hooks。
-   * 策略：遍历所有 hooks，按特征匹配：
-   *   - videoListHook: Array 类型，元素含 lessonId（视频列表）
-   *   - currentVideoHook: Object 类型，含 lessonId/title，有 dispatch（当前选中视频）
+   * 从 sidebar item 向上遍历，找到包含 videoList + currentVideo hooks 的组件
    */
-  private findComponentHooks(): ComponentHooks | null {
+  private findComponentHooks(): { videoListHook: HookState; currentVideoHook: HookState } | null {
     const container = findElement(SELECTORS.videoList);
     if (!container) return null;
 
-    // 取第一个 item 的 fiber
     const item = container.querySelector('[class*="item-"]') as HTMLElement;
     if (!item) return null;
 
     const fiber = this.getReactFiber(item);
     if (!fiber) return null;
 
-    // 向上遍历找包含正确 hooks 的组件
     let current: any = fiber;
     let depth = 0;
 
@@ -178,25 +182,22 @@ export class AutoPlay {
           const state = hook.memoizedState;
           const hasDispatch = typeof hook.queue?.dispatch === 'function';
 
-          // 视频列表：数组，元素含 lessonId
           if (!videoListHook && Array.isArray(state) && state.length > 0 && state[0]?.lessonId) {
             videoListHook = hook;
           }
 
-          // 当前视频：对象，含 lessonId 和 title，有 dispatch
           if (!currentVideoHook && hasDispatch && !Array.isArray(state) &&
               state && typeof state === 'object' &&
               state.lessonId && state.title && state.contentUrl) {
             currentVideoHook = hook;
-            DebugLogger.debug('AutoPlay', `找到 currentVideo hook (depth=${depth}): ${state.title}`);
           }
 
           hook = hook.next as HookState;
         }
 
         if (videoListHook && currentVideoHook) {
-          DebugLogger.debug('AutoPlay', `找到组件 hooks: videoList(${videoListHook.memoizedState.length}项), currentVideo`);
-          return { fiber: current, videoListHook, currentVideoHook };
+          DebugLogger.debug('AutoPlay', `找到 hooks (depth=${depth})`);
+          return { videoListHook, currentVideoHook };
         }
       }
 
@@ -204,29 +205,15 @@ export class AutoPlay {
       depth++;
     }
 
+    DebugLogger.error('AutoPlay', '未找到组件 hooks');
     return null;
   }
 
   /**
-   * 获取或缓存组件 hooks
-   */
-  private getCachedHooks(): ComponentHooks | null {
-    if (this.cachedHooks) {
-      // 验证缓存仍然有效
-      const state = this.cachedHooks.videoListHook?.memoizedState;
-      if (Array.isArray(state) && state.length > 0) {
-        return this.cachedHooks;
-      }
-    }
-    this.cachedHooks = this.findComponentHooks();
-    return this.cachedHooks;
-  }
-
-  /**
-   * 通过 React dispatch 切换视频
+   * 通过 dispatch 切换视频
    */
   private switchVideo(targetVideo: any): boolean {
-    const hooks = this.getCachedHooks();
+    const hooks = this.findComponentHooks();
     if (!hooks?.currentVideoHook?.queue?.dispatch) {
       DebugLogger.error('AutoPlay', '未找到 currentVideo dispatch');
       return false;
@@ -249,11 +236,8 @@ export class AutoPlay {
       return;
     }
 
-    const hooks = this.getCachedHooks();
-    if (!hooks) {
-      DebugLogger.error('AutoPlay', '未找到组件 hooks');
-      return;
-    }
+    const hooks = this.findComponentHooks();
+    if (!hooks) return;
 
     const videoList: any[] = hooks.videoListHook?.memoizedState || [];
     const currentVideo: any = hooks.currentVideoHook?.memoizedState;
@@ -263,14 +247,12 @@ export class AutoPlay {
       return;
     }
 
-    // 找当前视频在列表中的位置
     const currentIdx = videoList.findIndex(v => v.lessonId === currentVideo.lessonId);
-    DebugLogger.debug('AutoPlay', `当前视频: ${currentVideo.title} (idx=${currentIdx}, total=${videoList.length})`);
+    DebugLogger.debug('AutoPlay', `当前: ${currentVideo.title} (idx=${currentIdx})`);
 
     // 找下一个未完成的视频
     let nextVideo: any = null;
 
-    // 1. 优先找未完成的
     for (let i = currentIdx + 1; i < videoList.length; i++) {
       if (!videoList[i].finished) {
         nextVideo = videoList[i];
@@ -278,12 +260,10 @@ export class AutoPlay {
       }
     }
 
-    // 2. 全部已完成，找下一个（循环）
     if (!nextVideo && currentIdx + 1 < videoList.length) {
       nextVideo = videoList[currentIdx + 1];
     }
 
-    // 3. 到末尾，回到第一个
     if (!nextVideo && videoList.length > 0) {
       nextVideo = videoList[0];
     }
@@ -294,12 +274,11 @@ export class AutoPlay {
     }
 
     this.lastSwitchTime = now;
-    DebugLogger.log('AutoPlay', `准备切换到: ${nextVideo.title}`);
+    this.videoEndedFired = false;
 
     const switched = this.switchVideo(nextVideo);
     if (switched) {
-      // 清除缓存，下次重新查找
-      this.cachedHooks = null;
+      DebugLogger.log('AutoPlay', `已切换到: ${nextVideo.title}`);
     }
   }
 }
