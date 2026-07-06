@@ -108,7 +108,7 @@ export class AutoPlay {
   }
 
   private tryAttachVideoListener(): void {
-    const video = document.querySelector('video') as HTMLVideoElement | null;
+    const video = findElement(SELECTORS.video) as HTMLVideoElement | null;
     if (!video) return;
 
     // Check if already attached
@@ -127,7 +127,7 @@ export class AutoPlay {
   }
 
   private detachVideoListener(): void {
-    const video = document.querySelector('video') as HTMLVideoElement | null;
+    const video = findElement(SELECTORS.video) as HTMLVideoElement | null;
     if (video && this.videoEndedHandler) {
       video.removeEventListener('ended', this.videoEndedHandler);
       (video as any).__ewtAttached = false;
@@ -137,7 +137,7 @@ export class AutoPlay {
 
   private checkProgress(): void {
     try {
-      const video = document.querySelector('video') as HTMLVideoElement | null;
+      const video = findElement(SELECTORS.video) as HTMLVideoElement | null;
       if (!video) return;
 
       // Re-attach if needed

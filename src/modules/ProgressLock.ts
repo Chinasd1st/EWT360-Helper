@@ -21,7 +21,7 @@ export class ProgressLock {
   }
 
   private start(): void {
-    const video = document.querySelector(SELECTORS.video) as HTMLVideoElement | null;
+    const video = findElement(SELECTORS.video) as HTMLVideoElement | null;
     if (!video) return;
 
     this.lastTime = video.currentTime;
@@ -45,7 +45,7 @@ export class ProgressLock {
   }
 
   private stop(): void {
-    const video = document.querySelector(SELECTORS.video) as HTMLVideoElement | null;
+    const video = findElement(SELECTORS.video) as HTMLVideoElement | null;
     if (video && this.handler) {
       video.removeEventListener('timeupdate', this.handler);
     }

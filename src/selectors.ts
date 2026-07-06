@@ -29,7 +29,11 @@ export const SELECTORS = {
   /**
    * 视频元素
    */
-  video: 'video',
+  video: {
+    semantic: ['video'],
+    structural: [],
+    cssModule: []
+  } as SelectorConfig,
 
   /**
    * 视频播放器容器
