@@ -1,12 +1,14 @@
-# EWT360 Helper
+# EWT360 Helper (Fork 分发版)
+
+> 本仓库是 [Chinasd1st/EWT360-Helper](https://github.com/Chinasd1st/EWT360-Helper) 的 fork 分发版本，在原版基础上增加了 TypeScript 模块化架构和 React Fiber 自动连播等功能。
 
 ![ima](/image/ewt_image.png)
 
 ## 简介
 
 - **名字**：EWT360 Helper
-- **最新版本**: 3.0.1
-- **作者**：[ZNink](https://github.com/ZNink) 、 [Lirzh](https://github.com/lirzh) 、[wesrin2000](https://github.com/wesrin2000)
+- **Fork 版本**: 3.0.1
+- **原版作者**：[ZNink](https://github.com/ZNink) 、 [Lirzh](https://github.com/lirzh) 、[wesrin2000](https://github.com/wesrin2000)
 - **内容概括**：自动连播、自动过认真度检查、自动跳过课程中的选择题、强制倍速
 - **要求：** 此脚本仅供学习交流，严禁用于商业用途，若有请于24小时内删除，请不要售卖脚本，此脚本完全免费！！
 - **协议**：GPL v2
@@ -14,11 +16,12 @@
 
 ## 分发说明
 
-本仓库的 `output` 分支为**构建产物分发版本**，由 GitHub Actions 自动构建并部署。
+本仓库为原版 EWT360-Helper 的 **fork 分发版本**，`output` 分支为构建产物分发版本，由 GitHub Actions 自动构建并部署。
 
 - **安装方式**：通过 Tampermonkey 安装 `output` 分支的 `main.user.js`
 - **源码**：`main` 分支，基于 TypeScript + Vite 构建
 - **自动更新**：脚本内置 `@updateURL` / `@downloadURL` 指向 `output` 分支，Tampermonkey 会自动检测更新
+- **与原版差异**：本 fork 版采用 TypeScript 模块化架构，自动连播功能通过 React Fiber 直接操作组件状态实现（详见下方技术说明）
 
 ## 技术架构 (v3.x)
 
