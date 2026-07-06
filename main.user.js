@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         升学E网通助手 v2 Lite
 // @namespace    https://github.com/ZNink/EWT360-Helper
-// @version      2.5.0
+// @version      2.6.0
 // @description  用于帮助学生通过升学E网通更好学习知识(雾)
 // @match        https://teacher.ewt360.com/ewtbend/bend/index/index.html*
 // @match        http://teacher.ewt360.com/ewtbend/bend/index/index.html*
@@ -66,6 +66,132 @@ const Config = {
 };
 
 /**
+ * 页面元素查找工具
+ */
+const ElementFinder = {
+    /**
+     * 查找视频播放器容器
+     */
+    findVideoPlayer() {
+        return document.querySelector('[role="region"][aria-label="视频播放器"]') ||
+               document.querySelector('.video-player') ||
+               document.querySelector('[class*="player"]');
+    },
+
+    /**
+     * 查找视频列表容器
+     */
+    findVideoListContainer() {
+        return document.querySelector('[class*="list"]') ||
+               document.querySelector('[class*="task"]') ||
+               document.querySelector('[class*="course"]');
+    },
+
+    /**
+     * 查找当前激活的视频项
+     */
+    findActiveVideoItem() {
+        const items = document.querySelectorAll('[class*="item"], [class*="video"], [class*="task"]');
+        for (const item of items) {
+            if (item.classList.toString().includes('active') ||
+                item.classList.toString().includes('current') ||
+                item.classList.toString().includes('selected') ||
+                item.getAttribute('aria-current') === 'true') {
+                return item;
+            }
+        }
+        return null;
+    },
+
+    /**
+     * 查找所有视频项
+     */
+    findAllVideoItems() {
+        const container = this.findVideoListContainer();
+        if (!container) return [];
+        return Array.from(container.querySelectorAll('[class*="item"], [class*="video"], [class*="task"]'));
+    },
+
+    /**
+     * 检查视频是否已完成
+     */
+    isVideoCompleted(item) {
+        if (!item) return false;
+        const text = item.textContent || '';
+        const html = item.innerHTML || '';
+        return text.includes('已完成') ||
+               html.includes('check') ||
+               item.querySelector('[class*="complete"]') !== null ||
+               item.querySelector('[class*="finished"]') !== null ||
+               item.querySelector('img[alt="check"]') !== null;
+    },
+
+    /**
+     * 查找点击通过检查按钮
+     */
+    findCheckButton() {
+        const buttons = document.querySelectorAll('button, span, div, a');
+        for (const btn of buttons) {
+            const text = btn.textContent.trim();
+            if (text.includes('点击通过检查') ||
+                text.includes('通过检查') ||
+                text.includes('确认') ||
+                text.includes('点击确认')) {
+                return btn;
+            }
+        }
+        return null;
+    },
+
+    /**
+     * 查找跳过按钮
+     */
+    findSkipButton() {
+        const buttons = document.querySelectorAll('button, a, span, div');
+        for (const btn of buttons) {
+            const text = btn.textContent.trim();
+            if (text === '跳过' || text.includes('跳过')) {
+                return btn;
+            }
+        }
+        return null;
+    },
+
+    /**
+     * 查找速度菜单项
+     */
+    findSpeedMenuItems() {
+        const items = document.querySelectorAll('[class*="speed"], [class*="rate"], [class*="menu"] [class*="item"]');
+        return Array.from(items).filter(item => {
+            const text = item.textContent.trim();
+            return /^\d+X$/.test(text) || /^\d+\.\d+X$/.test(text);
+        });
+    },
+
+    /**
+     * 查找视频元素
+     */
+    findVideoElement() {
+        return document.querySelector('video');
+    },
+
+    /**
+     * 查找下一个未完成的视频
+     */
+    findNextUnfinishedVideo(currentItem) {
+        if (!currentItem) return null;
+        let next = currentItem.nextElementSibling;
+        while (next) {
+            if (!this.isVideoCompleted(next)) {
+                return next;
+            }
+            next = next.nextElementSibling;
+        }
+        return null;
+    }
+};
+
+/**
  * 自动跳题模块
  */
 const AutoSkip = {
@@ -96,27 +222,12 @@ const AutoSkip = {
 
     checkAndSkip() {
         try {
-            const skipText = '跳过';
-            let targetButton = Array.from(document.querySelectorAll('button, a, span.btn, div.btn')).find(
-                btn => btn.textContent.trim() === skipText
-            );
-
-            if (!targetButton) {
-                const xpathResult = document.evaluate(
-                    `//*[text()="${skipText}"]`, 
-                    document, 
-                    null, 
-                    XPathResult.FIRST_ORDERED_NODE_TYPE, 
-                    null
-                );
-                targetButton = xpathResult.singleNodeValue;
-            }
-
-            if (targetButton && !targetButton.dataset.skipClicked) {
-                targetButton.dataset.skipClicked = 'true';
-                targetButton.click();
+            const skipButton = ElementFinder.findSkipButton();
+            if (skipButton && !skipButton.dataset.skipClicked) {
+                skipButton.dataset.skipClicked = 'true';
+                skipButton.click();
                 DebugLogger.log('AutoSkip', '已自动跳过题目');
-                setTimeout(() => delete targetButton.dataset.skipClicked, 5000);
+                setTimeout(() => delete skipButton.dataset.skipClicked, 5000);
             }
         } catch (error) {
             DebugLogger.error('AutoSkip', '自动跳题出错', error);
@@ -125,7 +236,7 @@ const AutoSkip = {
 };
 
 /**
- * 自动连播模块（已修改：看完连播 = 检测进度图片）
+ * 自动连播模块
  */
 const AutoPlay = {
     intervalId: null,
@@ -163,35 +274,32 @@ const AutoPlay = {
 
     checkAndSwitch() {
         try {
-            const videoListContainer = document.querySelector('.listCon-zrsBh');
-            const activeVideo = videoListContainer?.querySelector('.item-blpma.active-EI2Hl');
-            if (!videoListContainer || !activeVideo) return;
+            const video = ElementFinder.findVideoElement();
+            if (!video) return;
+
+            const activeVideo = ElementFinder.findActiveVideoItem();
+            if (!activeVideo) return;
 
             let canPlayNext = false;
 
             if (this.currentMode === Config.playMode.PROGRESS_85) {
-                const video = document.querySelector('video');
-                if (!video) return;
                 const current = video.currentTime;
                 const total = video.duration;
                 if (isNaN(total) || total <= 0) return;
                 canPlayNext = current / total >= this.progressThreshold;
+                DebugLogger.debug('AutoPlay', `进度: ${(current / total * 100).toFixed(1)}%`);
             } else {
-                const img = document.querySelector('img.progress-img-vkUYM[src="//file.ewt360.com/file/1820894120067424424"]');
+                const img = document.querySelector('img[src*="1820894120067424424"]');
                 canPlayNext = !!img;
                 if (img) DebugLogger.log('AutoPlay', '检测到已看完图片，准备连播');
             }
 
             if (!canPlayNext) return;
 
-            let nextVideo = activeVideo.nextElementSibling;
-            while (nextVideo) {
-                if (nextVideo.classList.contains('item-blpma') && !nextVideo.querySelector('.finished-PsNX9')) {
-                    nextVideo.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                    DebugLogger.log('AutoPlay', '已自动切换下一个视频');
-                    break;
-                }
-                nextVideo = nextVideo.nextElementSibling;
+            const nextVideo = ElementFinder.findNextUnfinishedVideo(activeVideo);
+            if (nextVideo) {
+                nextVideo.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                DebugLogger.log('AutoPlay', '已自动切换下一个视频');
             }
         } catch (error) {
             DebugLogger.error('AutoPlay', '自动连播出错', error);
@@ -228,9 +336,8 @@ const AutoCheckPass = {
 
     checkAndClick() {
         try {
-            const checkButton = document.querySelector('span.btn-DOCWn');
-            if (checkButton && checkButton.textContent.trim() === '点击通过检查') {
-                if (checkButton.dataset.checkClicked) return;
+            const checkButton = ElementFinder.findCheckButton();
+            if (checkButton && !checkButton.dataset.checkClicked) {
                 checkButton.dataset.checkClicked = 'true';
                 checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                 DebugLogger.log('AutoCheckPass', '已自动通过检查');
@@ -280,10 +387,10 @@ const SpeedControl = {
 
     ensureSpeed() {
         try {
-            const speedItems = document.querySelectorAll('.vjs-menu-content .vjs-menu-item');
+            const speedItems = ElementFinder.findSpeedMenuItems();
             for (const item of speedItems) {
-                const t = item.querySelector('.vjs-menu-item-text')?.textContent.trim();
-                if (t === this.targetSpeed && !item.classList.contains('vjs-selected')) {
+                const text = item.textContent.trim();
+                if (text === this.targetSpeed && !item.classList.toString().includes('active')) {
                     item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                     DebugLogger.log('SpeedControl', `已设为${this.targetSpeed}`);
                     break;
@@ -350,11 +457,14 @@ const ProgressLock = {
 
     start() {
         const lockProgress = () => {
-            const progressElements = document.querySelectorAll('[class*="progress"], [class*="prgs"]');
-            progressElements.forEach(el => {
-                el.style.pointerEvents = 'none';
-                el.style.cursor = 'not-allowed';
-            });
+            const player = ElementFinder.findVideoPlayer();
+            if (player) {
+                const progressElements = player.querySelectorAll('[role="slider"], [class*="progress"], [class*="bar"]');
+                progressElements.forEach(el => {
+                    el.style.pointerEvents = 'none';
+                    el.style.cursor = 'not-allowed';
+                });
+            }
         };
         lockProgress();
         this.timer = setInterval(lockProgress, 200);
@@ -362,11 +472,14 @@ const ProgressLock = {
 
     stop() {
         clearInterval(this.timer);
-        const progressElements = document.querySelectorAll('[class*="progress"], [class*="prgs"]');
-        progressElements.forEach(el => {
-            el.style.pointerEvents = 'auto';
-            el.style.cursor = 'default';
-        });
+        const player = ElementFinder.findVideoPlayer();
+        if (player) {
+            const progressElements = player.querySelectorAll('[role="slider"], [class*="progress"], [class*="bar"]');
+            progressElements.forEach(el => {
+                el.style.pointerEvents = 'auto';
+                el.style.cursor = 'default';
+            });
+        }
     }
 };
 
