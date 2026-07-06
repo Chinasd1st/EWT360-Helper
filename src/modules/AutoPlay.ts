@@ -1,5 +1,8 @@
 /**
  * 自动连播模块
+ * 
+ * 通过 React Fiber 树遍历直接操作 React 内部 useState 的 dispatch 函数来切换视频。
+ * 已验证：sidebar item fiber → 向上 14 层 → 找到含 videoList + currentVideo 的 hooks → dispatch 切换。
  */
 
 import { DebugLogger } from '../utils/DebugLogger';
@@ -20,6 +23,21 @@ const DEFAULT_CONFIG: AutoPlayConfig = {
   checkInterval: 2000
 };
 
+interface HookState {
+  memoizedState: any;
+  queue?: {
+    dispatch?: (value: any) => void;
+    last?: any;
+  };
+  next?: HookState;
+}
+
+interface ComponentHooks {
+  fiber: any;
+  videoListHook: HookState | null;
+  currentVideoHook: HookState | null;
+}
+
 export class AutoPlay {
   private intervalId: number | null = null;
   private observer: MutationObserver | null = null;
@@ -27,6 +45,7 @@ export class AutoPlay {
   private config: AutoPlayConfig;
   private currentMode: PlayMode = PlayMode.PROGRESS_85;
   private lastSwitchTime: number = 0;
+  private cachedHooks: ComponentHooks | null = null;
 
   constructor(config: Partial<AutoPlayConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -118,6 +137,111 @@ export class AutoPlay {
     }
   }
 
+  // ========== React Fiber 工具函数 ==========
+
+  private getReactFiber(element: Element): any | null {
+    const key = Object.keys(element).find(k =>
+      k.startsWith('__reactInternalInstance') || k.startsWith('__reactFiber')
+    );
+    if (!key) return null;
+    return (element as any)[key];
+  }
+
+  /**
+   * 从 sidebar item 出发，找到管理视频列表的 React 组件的 hooks。
+   * 策略：遍历所有 hooks，按特征匹配：
+   *   - videoListHook: Array 类型，元素含 lessonId（视频列表）
+   *   - currentVideoHook: Object 类型，含 lessonId/title，有 dispatch（当前选中视频）
+   */
+  private findComponentHooks(): ComponentHooks | null {
+    const container = findElement(SELECTORS.videoList);
+    if (!container) return null;
+
+    // 取第一个 item 的 fiber
+    const item = container.querySelector('[class*="item-"]') as HTMLElement;
+    if (!item) return null;
+
+    const fiber = this.getReactFiber(item);
+    if (!fiber) return null;
+
+    // 向上遍历找包含正确 hooks 的组件
+    let current: any = fiber;
+    let depth = 0;
+
+    while (current && depth < 80) {
+      if (current.memoizedState) {
+        let hook: HookState = current.memoizedState;
+        let videoListHook: HookState | null = null;
+        let currentVideoHook: HookState | null = null;
+
+        while (hook) {
+          const state = hook.memoizedState;
+          const hasDispatch = typeof hook.queue?.dispatch === 'function';
+
+          // 视频列表：数组，元素含 lessonId
+          if (!videoListHook && Array.isArray(state) && state.length > 0 && state[0]?.lessonId) {
+            videoListHook = hook;
+          }
+
+          // 当前视频：对象，含 lessonId 和 title，有 dispatch
+          if (!currentVideoHook && hasDispatch && !Array.isArray(state) &&
+              state && typeof state === 'object' &&
+              state.lessonId && state.title && state.contentUrl) {
+            currentVideoHook = hook;
+            DebugLogger.debug('AutoPlay', `找到 currentVideo hook (depth=${depth}): ${state.title}`);
+          }
+
+          hook = hook.next as HookState;
+        }
+
+        if (videoListHook && currentVideoHook) {
+          DebugLogger.debug('AutoPlay', `找到组件 hooks: videoList(${videoListHook.memoizedState.length}项), currentVideo`);
+          return { fiber: current, videoListHook, currentVideoHook };
+        }
+      }
+
+      current = current.return;
+      depth++;
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取或缓存组件 hooks
+   */
+  private getCachedHooks(): ComponentHooks | null {
+    if (this.cachedHooks) {
+      // 验证缓存仍然有效
+      const state = this.cachedHooks.videoListHook?.memoizedState;
+      if (Array.isArray(state) && state.length > 0) {
+        return this.cachedHooks;
+      }
+    }
+    this.cachedHooks = this.findComponentHooks();
+    return this.cachedHooks;
+  }
+
+  /**
+   * 通过 React dispatch 切换视频
+   */
+  private switchVideo(targetVideo: any): boolean {
+    const hooks = this.getCachedHooks();
+    if (!hooks?.currentVideoHook?.queue?.dispatch) {
+      DebugLogger.error('AutoPlay', '未找到 currentVideo dispatch');
+      return false;
+    }
+
+    try {
+      hooks.currentVideoHook.queue.dispatch(targetVideo);
+      DebugLogger.log('AutoPlay', `dispatch 切换到: ${targetVideo.title}`);
+      return true;
+    } catch (e) {
+      DebugLogger.error('AutoPlay', 'dispatch 切换失败', e);
+      return false;
+    }
+  }
+
   private switchToNext(): void {
     const now = Date.now();
     if (now - this.lastSwitchTime < 3000) {
@@ -125,74 +249,57 @@ export class AutoPlay {
       return;
     }
 
-    const container = findElement(SELECTORS.videoList);
-    if (!container) {
-      DebugLogger.debug('AutoPlay', '未找到视频列表容器');
+    const hooks = this.getCachedHooks();
+    if (!hooks) {
+      DebugLogger.error('AutoPlay', '未找到组件 hooks');
       return;
     }
 
-    const items = Array.from(container.children).filter(
-      el => !matchesSelector(el as HTMLElement, SELECTORS.noMoreVideo)
-    ) as HTMLElement[];
-    DebugLogger.debug('AutoPlay', `找到 ${items.length} 个视频项`);
+    const videoList: any[] = hooks.videoListHook?.memoizedState || [];
+    const currentVideo: any = hooks.currentVideoHook?.memoizedState;
 
-    // 优先通过 active- 类名找当前视频，回退到 URL lessonId
-    let currentIdx = items.findIndex(item => (item.className || '').includes('active-'));
-    if (currentIdx === -1) {
-      const urlLessonId = window.location.hash.match(/lessonId=(\d+)/)?.[1];
-      if (urlLessonId) {
-        currentIdx = items.findIndex(item => {
-          const m = (item.className || '').match(/item(\d+)/);
-          return m && urlLessonId.endsWith(m[1]) || m && m[1]?.endsWith(urlLessonId);
-        });
-      }
-    }
-    if (currentIdx === -1) {
-      DebugLogger.debug('AutoPlay', '未找到当前激活视频');
+    if (!videoList.length || !currentVideo) {
+      DebugLogger.error('AutoPlay', 'videoList 或 currentVideo 为空');
       return;
     }
 
-    DebugLogger.debug('AutoPlay', `当前视频索引: ${currentIdx}`);
+    // 找当前视频在列表中的位置
+    const currentIdx = videoList.findIndex(v => v.lessonId === currentVideo.lessonId);
+    DebugLogger.debug('AutoPlay', `当前视频: ${currentVideo.title} (idx=${currentIdx}, total=${videoList.length})`);
 
-    const nextItem = this.findNextItem(items, currentIdx);
-    if (nextItem) {
-      this.lastSwitchTime = now;
-      const title = nextItem.textContent?.substring(0, 30) || '';
+    // 找下一个未完成的视频
+    let nextVideo: any = null;
 
-      // 从 class 中提取 ID: item155136 -> 155136
-      const match = (nextItem.className || '').match(/item(\d+)/);
-      if (!match) {
-        DebugLogger.debug('AutoPlay', '无法提取 item ID');
-        return;
-      }
-      const itemId = match[1];
-
-      DebugLogger.log('AutoPlay', `准备切换到: ${title} (itemId=${itemId})`);
-
-      // 直接修改 URL hash 中的 lessonId 来切换视频
-      const url = new URL(window.location.href);
-      url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${itemId}`);
-      window.location.href = url.href;
-
-      DebugLogger.log('AutoPlay', '已切换');
-    } else {
-      DebugLogger.debug('AutoPlay', '没有更多视频');
-    }
-  }
-
-  private findNextItem(items: HTMLElement[], currentIndex: number): HTMLElement | null {
-    // 1. 找下一个未完成的视频
-    for (let i = currentIndex + 1; i < items.length; i++) {
-      if (!matchesSelector(items[i], SELECTORS.completedVideo)) {
-        return items[i];
+    // 1. 优先找未完成的
+    for (let i = currentIdx + 1; i < videoList.length; i++) {
+      if (!videoList[i].finished) {
+        nextVideo = videoList[i];
+        break;
       }
     }
-    // 2. 全部已完成，找下一个视频（循环播放）
-    for (let i = currentIndex + 1; i < items.length; i++) {
-      return items[i];
+
+    // 2. 全部已完成，找下一个（循环）
+    if (!nextVideo && currentIdx + 1 < videoList.length) {
+      nextVideo = videoList[currentIdx + 1];
     }
+
     // 3. 到末尾，回到第一个
-    if (currentIndex > 0) return items[0];
-    return null;
+    if (!nextVideo && videoList.length > 0) {
+      nextVideo = videoList[0];
+    }
+
+    if (!nextVideo) {
+      DebugLogger.debug('AutoPlay', '没有更多视频');
+      return;
+    }
+
+    this.lastSwitchTime = now;
+    DebugLogger.log('AutoPlay', `准备切换到: ${nextVideo.title}`);
+
+    const switched = this.switchVideo(nextVideo);
+    if (switched) {
+      // 清除缓存，下次重新查找
+      this.cachedHooks = null;
+    }
   }
 }

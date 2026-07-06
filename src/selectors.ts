@@ -54,9 +54,22 @@ export const SELECTORS = {
    */
   videoList: {
     semantic: [],
-    structural: [],
+    structural: [
+      '[class*="lessonList"] [class*="listCon"]'
+    ],
     cssModule: [
       '[class*="listCon-"]'
+    ]
+  } as SelectorConfig,
+
+  /**
+   * 学生播放器页面容器
+   */
+  studentPlayer: {
+    semantic: [],
+    structural: [],
+    cssModule: [
+      '[class*="studentPlayer-"]'
     ]
   } as SelectorConfig,
 
