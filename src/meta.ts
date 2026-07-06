@@ -15,7 +15,7 @@ export const meta = {
     'http://web.ewt360.com/site-study/*'
   ],
   grant: 'none',
-  updateURL: 'https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/dist/main.user.js',
-  downloadURL: 'https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/dist/main.user.js',
+  updateURL: 'https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js',
+  downloadURL: 'https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js',
   supportURL: 'https://github.com/Chinasd1st/EWT360-Helper/issues'
 };
