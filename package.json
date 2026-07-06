@@ -1,27 +1,33 @@
 {
   "name": "ewt360-helper",
-  "version": "1.0.0",
-  "description": "![ima](/image/ewt_image.png)",
-  "main": "main.user.js",
+  "version": "3.0.0",
+  "description": "升学E网通助手 - 自动连播、自动过检、自动跳题、强制倍速",
+  "main": "dist/main.user.js",
   "scripts": {
+    "dev": "vite build --watch",
+    "build": "tsc && vite build",
+    "build:prod": "tsc && vite build --mode production",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:ui": "npx playwright test --ui",
-    "test:debug": "npx playwright test --debug"
+    "test:debug": "npx playwright test --debug",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Chinasd1st/EWT360-Helper.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "keywords": ["ewt360", "tampermonkey", "userscript", "油猴脚本"],
+  "author": "Chinasd1st",
+  "license": "GPL-2.0",
   "bugs": {
     "url": "https://github.com/Chinasd1st/EWT360-Helper/issues"
   },
   "homepage": "https://github.com/Chinasd1st/EWT360-Helper#readme",
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
+    "@playwright/test": "^1.61.1",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
   }
 }
