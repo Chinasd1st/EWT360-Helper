@@ -1,18 +1,18 @@
 // ==UserScript==
 // @name         升学E网通助手 v2 Lite
-// @namespace    https://github.com/ZNink/EWT360-Helper
+// @namespace    https://github.com/Chinasd1st/EWT360-Helper
 // @version      2.6.0
 // @description  用于帮助学生通过升学E网通更好学习知识(雾)
 // @match        https://teacher.ewt360.com/ewtbend/bend/index/index.html*
 // @match        http://teacher.ewt360.com/ewtbend/bend/index/index.html*
 // @match        https://web.ewt360.com/site-study/*
 // @match        http://web.ewt360.com/site-study/*
-// @author       ZNink，Linrzh，L#peace
+// @author       Chinasd1st
 // @icon         https://www.ewt360.com/favicon.ico
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/ZNink/EWT360-Helper/main/main.user.js
-// @downloadURL  https://raw.githubusercontent.com/ZNink/EWT360-Helper/main/main.user.js
-// @supportURL   https://github.com/ZNink/EWT360-Helper/issues
+// @updateURL    https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/main.user.js
+// @downloadURL  https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/main.user.js
+// @supportURL   https://github.com/Chinasd1st/EWT360-Helper/issues
 // ==/UserScript==
 
 /**
