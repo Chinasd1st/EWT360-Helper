@@ -343,8 +343,17 @@
         (el) => !matchesSelector(el, SELECTORS.noMoreVideo)
       );
       DebugLogger.debug("AutoPlay", `找到 ${items.length} 个视频项`);
-      const urlLessonId = (_a = window.location.hash.match(/lessonId=(\d+)/)) == null ? void 0 : _a[1];
-      const currentIdx = urlLessonId ? items.findIndex((item) => (item.className || "").includes(`item${urlLessonId}`)) : items.findIndex((item) => matchesSelector(item, SELECTORS.activeVideo));
+      let currentIdx = items.findIndex((item) => (item.className || "").includes("active-"));
+      if (currentIdx === -1) {
+        const urlLessonId = (_a = window.location.hash.match(/lessonId=(\d+)/)) == null ? void 0 : _a[1];
+        if (urlLessonId) {
+          currentIdx = items.findIndex((item) => {
+            var _a2;
+            const m = (item.className || "").match(/item(\d+)/);
+            return m && urlLessonId.endsWith(m[1]) || m && ((_a2 = m[1]) == null ? void 0 : _a2.endsWith(urlLessonId));
+          });
+        }
+      }
       if (currentIdx === -1) {
         DebugLogger.debug("AutoPlay", "未找到当前激活视频");
         return;
@@ -356,13 +365,13 @@
         const title = ((_b = nextItem.textContent) == null ? void 0 : _b.substring(0, 30)) || "";
         const match = (nextItem.className || "").match(/item(\d+)/);
         if (!match) {
-          DebugLogger.debug("AutoPlay", "无法提取 lessonId");
+          DebugLogger.debug("AutoPlay", "无法提取 item ID");
           return;
         }
-        const lessonId = match[1];
-        DebugLogger.log("AutoPlay", `准备切换到: ${title} (lessonId=${lessonId})`);
+        const itemId = match[1];
+        DebugLogger.log("AutoPlay", `准备切换到: ${title} (itemId=${itemId})`);
         const url = new URL(window.location.href);
-        url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${lessonId}`);
+        url.hash = url.hash.replace(/lessonId=\d+/, `lessonId=${itemId}`);
         window.location.href = url.href;
         DebugLogger.log("AutoPlay", "已切换");
       } else {
