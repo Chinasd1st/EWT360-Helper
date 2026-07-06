@@ -10,8 +10,8 @@
 // @author       Chinasd1st
 // @icon         https://www.ewt360.com/favicon.ico
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/dist/main.user.js
-// @downloadURL  https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/main/dist/main.user.js
+// @updateURL    https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js
+// @downloadURL  https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js
 // @supportURL   https://github.com/Chinasd1st/EWT360-Helper/issues
 // ==/UserScript==
 
