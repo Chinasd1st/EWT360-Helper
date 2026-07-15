@@ -5,3 +5,5 @@ playwright-report/
 blob-report/
 .playwright/
 *.log
+
+.vscode
