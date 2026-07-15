@@ -1,5 +1,9 @@
 /**
  * 自动过检模块
+ *
+ * EWT 在 checkPassRef.current 上注册了 click 监听器，
+ * 该监听器检查 event.isTrusted 和 instanceof MouseEvent。
+ * 使用 el.click() 触发原生可信事件，不需要 isTrusted 绕过。
  */
 
 import { DebugLogger } from '../utils/DebugLogger';
@@ -44,8 +48,8 @@ export class AutoCheckPass {
       DebugLogger.debug('AutoCheckPass', `找到按钮: <${checkButton.tagName}> "${checkButton.textContent?.trim().slice(0, 30)}"`);
 
       checkButton.dataset.checkClicked = 'true';
-      checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-      DebugLogger.log('AutoCheckPass', '已触发 click 事件');
+      checkButton.click();
+      DebugLogger.log('AutoCheckPass', '已调用 el.click()（原生可信事件）');
       setTimeout(() => delete checkButton.dataset.checkClicked, 3000);
     } catch (error) {
       DebugLogger.error('AutoCheckPass', '过检出错', error);
