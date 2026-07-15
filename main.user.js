@@ -10,6 +10,7 @@
 // @author       Chinasd1st
 // @icon         https://www.ewt360.com/favicon.ico
 // @grant        none
+// @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js
 // @downloadURL  https://raw.githubusercontent.com/Chinasd1st/EWT360-Helper/output/main.user.js
 // @supportURL   https://github.com/Chinasd1st/EWT360-Helper/issues
@@ -48,6 +49,55 @@
       data ? console.debug(msg, data) : console.debug(msg);
     }
   };
+  const originalAddEventListener = EventTarget.prototype.addEventListener;
+  const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
+  const wrappedListenersMap = /* @__PURE__ */ new WeakMap();
+  let installed = false;
+  function installIsTrustedBypass() {
+    if (installed) return;
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+      if (typeof listener !== "function" || type !== "click" || !String(listener).includes("isTrusted")) {
+        return originalAddEventListener.call(this, type, listener, options);
+      }
+      DebugLogger.log("IsTrustedBypass", `劫持 click 监听器: ${String(listener).slice(0, 80)}...`);
+      let wrappedListener = wrappedListenersMap.get(listener);
+      if (!wrappedListener) {
+        wrappedListener = function(event) {
+          if (event && typeof event === "object" && "isTrusted" in event) {
+            const eventProxy = new Proxy(event, {
+              get(target, prop) {
+                if (prop === "isTrusted") {
+                  if (target.isTrusted === false && (target.type === "click" || target.type === "submit" || target.type === "change")) {
+                    DebugLogger.log("IsTrustedBypass", `篡改 ${target.type} isTrusted: false -> true`);
+                    return true;
+                  }
+                  return target.isTrusted;
+                }
+                const value = target[prop];
+                return typeof value === "function" ? value.bind(target) : value;
+              }
+            });
+            return listener.call(this, eventProxy);
+          }
+          return listener.call(this, event);
+        };
+        wrappedListenersMap.set(listener, wrappedListener);
+        wrappedListenersMap.set(wrappedListener, listener);
+      }
+      return originalAddEventListener.call(this, type, wrappedListener, options);
+    };
+    EventTarget.prototype.removeEventListener = function(type, listener, options) {
+      if (typeof listener === "function") {
+        const wrappedListener = wrappedListenersMap.get(listener);
+        if (wrappedListener) {
+          return originalRemoveEventListener.call(this, type, wrappedListener, options);
+        }
+      }
+      return originalRemoveEventListener.call(this, type, listener, options);
+    };
+    installed = true;
+    DebugLogger.log("IsTrustedBypass", "addEventListener 劫持已启动");
+  }
   const SELECTORS = {
     /**
      * 视频元素
@@ -1128,6 +1178,7 @@
       }
     }
   }
+  installIsTrustedBypass();
   const autoPlay = new AutoPlay();
   const autoSkip = new AutoSkip();
   const autoCheckPass = new AutoCheckPass();
