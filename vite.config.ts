@@ -15,6 +15,7 @@ ${matchStr}
 // @author       ${meta.author}
 // @icon         ${meta.icon}
 // @grant        ${meta.grant}
+// @run-at       document-start
 // @updateURL    ${meta.updateURL}
 // @downloadURL  ${meta.downloadURL}
 // @supportURL   ${meta.supportURL}

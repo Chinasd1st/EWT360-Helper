@@ -6,6 +6,7 @@
  */
 
 import { DebugLogger } from './utils/DebugLogger';
+import { installIsTrustedBypass } from './modules/IsTrustedBypass';
 import { AutoPlay, PlayMode } from './modules/AutoPlay';
 import { AutoSkip } from './modules/AutoSkip';
 import { AutoCheckPass } from './modules/AutoCheckPass';
@@ -13,6 +14,9 @@ import { SpeedControl } from './modules/SpeedControl';
 import { ProgressLock } from './modules/ProgressLock';
 import { GUI } from './gui';
 import { validateSelectors } from './selectors';
+
+// 劫持 addEventListener 以绕过 isTrusted 检测（必须最先执行，不等 DOM）
+installIsTrustedBypass();
 
 // 创建模块实例
 const autoPlay = new AutoPlay();
