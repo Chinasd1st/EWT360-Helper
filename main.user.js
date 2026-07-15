@@ -51,51 +51,63 @@
   };
   const originalAddEventListener = EventTarget.prototype.addEventListener;
   const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
-  const wrappedListenersMap = /* @__PURE__ */ new WeakMap();
+  const originalToWrapped = /* @__PURE__ */ new WeakMap();
+  const wrappedToOriginal = /* @__PURE__ */ new WeakMap();
+  const HIJACK_EVENT_TYPES = /* @__PURE__ */ new Set(["click", "submit", "change", "mousedown", "mouseup", "pointerdown", "pointerup"]);
+  const TRUSTED_EVENT_TYPES = /* @__PURE__ */ new Set(["click", "submit", "change"]);
   let installed = false;
+  function mayCheckIsTrusted(listener) {
+    const fnStr = String(listener);
+    if (fnStr.includes("isTrusted")) {
+      return true;
+    }
+    if (fnStr.includes(".isTrusted")) {
+      return true;
+    }
+    return false;
+  }
   function installIsTrustedBypass() {
     if (installed) return;
     EventTarget.prototype.addEventListener = function(type, listener, options) {
-      if (typeof listener !== "function" || type !== "click" || !String(listener).includes("isTrusted")) {
+      if (typeof listener !== "function" || !HIJACK_EVENT_TYPES.has(type)) {
         return originalAddEventListener.call(this, type, listener, options);
       }
-      DebugLogger.log("IsTrustedBypass", `劫持 click 监听器 (${String(listener).length} chars): ${String(listener).slice(0, 120)}...`);
-      let wrappedListener = wrappedListenersMap.get(listener);
-      if (!wrappedListener) {
-        wrappedListener = function(event) {
-          if (event && typeof event === "object" && "isTrusted" in event) {
-            let proxyCalled = false;
-            const eventProxy = new Proxy(event, {
-              get(target, prop) {
-                if (prop === "isTrusted") {
-                  proxyCalled = true;
-                  if (target.isTrusted === false && (target.type === "click" || target.type === "submit" || target.type === "change")) {
-                    DebugLogger.log("IsTrustedBypass", `篡改 ${target.type} isTrusted: false -> true`);
-                    return true;
-                  }
-                  return target.isTrusted;
-                }
-                const value = target[prop];
-                return typeof value === "function" ? value.bind(target) : value;
-              }
-            });
-            const result = listener.call(this, eventProxy);
-            if (!proxyCalled) {
-              DebugLogger.debug("IsTrustedBypass", `Proxy 未被访问 isTrusted (listener 可能未检查)`);
-            }
-            return result;
-          }
-          return listener.call(this, event);
-        };
-        wrappedListenersMap.set(listener, wrappedListener);
-        wrappedListenersMap.set(wrappedListener, listener);
+      if (originalToWrapped.has(listener)) {
+        return originalAddEventListener.call(this, type, originalToWrapped.get(listener), options);
       }
+      if (!mayCheckIsTrusted(listener)) {
+        return originalAddEventListener.call(this, type, listener, options);
+      }
+      DebugLogger.log("IsTrustedBypass", `劫持 ${type} 监听器 (${String(listener).length} chars): ${String(listener).slice(0, 120)}...`);
+      const wrappedListener = function(event) {
+        if (event && typeof event === "object" && "isTrusted" in event) {
+          const eventProxy = new Proxy(event, {
+            get(target, prop) {
+              if (prop === "isTrusted") {
+                if (target.isTrusted === false && TRUSTED_EVENT_TYPES.has(target.type)) {
+                  DebugLogger.log("IsTrustedBypass", `篡改 ${target.type} isTrusted: false -> true`);
+                  return true;
+                }
+                return target.isTrusted;
+              }
+              const value = target[prop];
+              return typeof value === "function" ? value.bind(target) : value;
+            }
+          });
+          return listener.call(this, eventProxy);
+        }
+        return listener.call(this, event);
+      };
+      originalToWrapped.set(listener, wrappedListener);
+      wrappedToOriginal.set(wrappedListener, listener);
       return originalAddEventListener.call(this, type, wrappedListener, options);
     };
     EventTarget.prototype.removeEventListener = function(type, listener, options) {
       if (typeof listener === "function") {
-        const wrappedListener = wrappedListenersMap.get(listener);
+        const wrappedListener = originalToWrapped.get(listener);
         if (wrappedListener) {
+          originalToWrapped.delete(listener);
+          wrappedToOriginal.delete(wrappedListener);
           return originalRemoveEventListener.call(this, type, wrappedListener, options);
         }
       }
