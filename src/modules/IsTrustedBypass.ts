@@ -33,15 +33,17 @@ export function installIsTrustedBypass(): void {
       return originalAddEventListener.call(this, type, listener as EventListener, options);
     }
 
-    DebugLogger.log('IsTrustedBypass', `劫持 click 监听器: ${String(listener).slice(0, 80)}...`);
+    DebugLogger.log('IsTrustedBypass', `劫持 click 监听器 (${String(listener).length} chars): ${String(listener).slice(0, 120)}...`);
 
     let wrappedListener = wrappedListenersMap.get(listener) as Function | undefined;
     if (!wrappedListener) {
       wrappedListener = function (this: EventTarget, event: Event) {
         if (event && typeof event === 'object' && 'isTrusted' in event) {
+          let proxyCalled = false;
           const eventProxy = new Proxy(event, {
             get(target: Event, prop: string | symbol) {
               if (prop === 'isTrusted') {
+                proxyCalled = true;
                 if (
                   target.isTrusted === false &&
                   (target.type === 'click' || target.type === 'submit' || target.type === 'change')
@@ -56,7 +58,11 @@ export function installIsTrustedBypass(): void {
               return typeof value === 'function' ? value.bind(target) : value;
             },
           });
-          return (listener as Function).call(this, eventProxy);
+          const result = (listener as Function).call(this, eventProxy);
+          if (!proxyCalled) {
+            DebugLogger.debug('IsTrustedBypass', `Proxy 未被访问 isTrusted (listener 可能未检查)`);
+          }
+          return result;
         }
         return (listener as Function).call(this, event);
       };

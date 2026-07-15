@@ -37,12 +37,16 @@ export class AutoCheckPass {
   private checkAndClick(): void {
     try {
       const checkButton = findElementByText(SELECTORS.checkButton.text || ['点击通过检查']);
-      if (checkButton && !checkButton.dataset.checkClicked) {
-        checkButton.dataset.checkClicked = 'true';
-        checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        DebugLogger.log('AutoCheckPass', '已自动通过检查');
-        setTimeout(() => delete checkButton.dataset.checkClicked, 3000);
-      }
+      if (!checkButton) return;
+
+      if (checkButton.dataset.checkClicked) return;
+
+      DebugLogger.debug('AutoCheckPass', `找到按钮: <${checkButton.tagName}> "${checkButton.textContent?.trim().slice(0, 30)}"`);
+
+      checkButton.dataset.checkClicked = 'true';
+      checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      DebugLogger.log('AutoCheckPass', '已触发 click 事件');
+      setTimeout(() => delete checkButton.dataset.checkClicked, 3000);
     } catch (error) {
       DebugLogger.error('AutoCheckPass', '过检出错', error);
     }
