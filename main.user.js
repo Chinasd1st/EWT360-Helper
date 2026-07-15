@@ -589,8 +589,8 @@
         if (checkButton.dataset.checkClicked) return;
         DebugLogger.debug("AutoCheckPass", `找到按钮: <${checkButton.tagName}> "${(_a = checkButton.textContent) == null ? void 0 : _a.trim().slice(0, 30)}"`);
         checkButton.dataset.checkClicked = "true";
-        checkButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-        DebugLogger.log("AutoCheckPass", "已触发 click 事件");
+        checkButton.click();
+        DebugLogger.log("AutoCheckPass", "已调用 el.click()（原生可信事件）");
         setTimeout(() => delete checkButton.dataset.checkClicked, 3e3);
       } catch (error) {
         DebugLogger.error("AutoCheckPass", "过检出错", error);
