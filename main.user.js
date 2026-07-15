@@ -59,14 +59,16 @@
       if (typeof listener !== "function" || type !== "click" || !String(listener).includes("isTrusted")) {
         return originalAddEventListener.call(this, type, listener, options);
       }
-      DebugLogger.log("IsTrustedBypass", `劫持 click 监听器: ${String(listener).slice(0, 80)}...`);
+      DebugLogger.log("IsTrustedBypass", `劫持 click 监听器 (${String(listener).length} chars): ${String(listener).slice(0, 120)}...`);
       let wrappedListener = wrappedListenersMap.get(listener);
       if (!wrappedListener) {
         wrappedListener = function(event) {
           if (event && typeof event === "object" && "isTrusted" in event) {
+            let proxyCalled = false;
             const eventProxy = new Proxy(event, {
               get(target, prop) {
                 if (prop === "isTrusted") {
+                  proxyCalled = true;
                   if (target.isTrusted === false && (target.type === "click" || target.type === "submit" || target.type === "change")) {
                     DebugLogger.log("IsTrustedBypass", `篡改 ${target.type} isTrusted: false -> true`);
                     return true;
@@ -77,7 +79,11 @@
                 return typeof value === "function" ? value.bind(target) : value;
               }
             });
-            return listener.call(this, eventProxy);
+            const result = listener.call(this, eventProxy);
+            if (!proxyCalled) {
+              DebugLogger.debug("IsTrustedBypass", `Proxy 未被访问 isTrusted (listener 可能未检查)`);
+            }
+            return result;
           }
           return listener.call(this, event);
         };
@@ -576,14 +582,16 @@
       }
     }
     checkAndClick() {
+      var _a;
       try {
         const checkButton = findElementByText(SELECTORS.checkButton.text || ["点击通过检查"]);
-        if (checkButton && !checkButton.dataset.checkClicked) {
-          checkButton.dataset.checkClicked = "true";
-          checkButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-          DebugLogger.log("AutoCheckPass", "已自动通过检查");
-          setTimeout(() => delete checkButton.dataset.checkClicked, 3e3);
-        }
+        if (!checkButton) return;
+        if (checkButton.dataset.checkClicked) return;
+        DebugLogger.debug("AutoCheckPass", `找到按钮: <${checkButton.tagName}> "${(_a = checkButton.textContent) == null ? void 0 : _a.trim().slice(0, 30)}"`);
+        checkButton.dataset.checkClicked = "true";
+        checkButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        DebugLogger.log("AutoCheckPass", "已触发 click 事件");
+        setTimeout(() => delete checkButton.dataset.checkClicked, 3e3);
       } catch (error) {
         DebugLogger.error("AutoCheckPass", "过检出错", error);
       }
